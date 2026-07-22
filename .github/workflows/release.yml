@@ -1,20 +1,43 @@
 name: release
 
-# Build and publish the multi-arch image to GHCR on a version tag (e.g. v0.1.0).
-# The image lands at ghcr.io/<owner>/dojo-dash:{version, major.minor, sha, latest}.
+# Publishes the multi-arch image to GHCR: ghcr.io/<owner>/dojo-dash.
+#
+# Version source of truth: __version__ in dojo_dash/__init__.py. Bump it, then release.
+# Two ways to release the current __version__:
+#   • Actions → "release" → Run workflow  (manual dispatch; creates the git tag for you)
+#   • git tag v$VERSION && git push origin v$VERSION   (tag must equal __version__)
+#
+# The release FAILS if that version is already published to GHCR — so every release must
+# bump __version__ first. Image tags produced: v<version>, <version>, latest, sha-<sha>.
 on:
+  workflow_dispatch: {}
   push:
     tags: ["v*"]
 
 permissions:
-  contents: read
-  packages: write
+  contents: write   # create the git tag + GitHub Release
+  packages: write   # push the image
 
 jobs:
-  image:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version (source of truth = dojo_dash/__init__.py)
+        id: ver
+        run: |
+          VERSION=$(python -c "import re,pathlib; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('dojo_dash/__init__.py').read_text()).group(1))")
+          [ -n "$VERSION" ] || { echo "::error::could not read __version__"; exit 1; }
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+          # On a tag push, the tag must match __version__ so the two never drift.
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match __version__ ${VERSION} — bump dojo_dash/__init__.py"
+            exit 1
+          fi
 
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
@@ -26,16 +49,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Fail if this version is already published (force a version bump)
+        run: |
+          IMG="ghcr.io/${{ github.repository }}:v${{ steps.ver.outputs.version }}"
+          if docker buildx imagetools inspect "$IMG" >/dev/null 2>&1; then
+            echo "::error::$IMG is already published — bump __version__ in dojo_dash/__init__.py before releasing"
+            exit 1
+          fi
+          echo "$IMG is not published yet — proceeding."
+
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha
+            type=raw,value=v${{ steps.ver.outputs.version }}
+            type=raw,value=${{ steps.ver.outputs.version }}
             type=raw,value=latest
+            type=sha
 
       - name: Build & push
         uses: docker/build-push-action@v6
@@ -45,3 +77,16 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Tag the commit + create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          # gh creates the tag at this commit if it doesn't already exist (dispatch path);
+          # on a tag push it already exists. Skip if a release for the tag is already there.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists — skipping."
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" --generate-notes
+          fi

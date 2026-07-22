@@ -119,6 +119,24 @@ dojo-dash render --findings-json fixtures/findings.json --out-dir out   # offlin
 python -m py_compile dojo_dash/*.py
 ```
 
+## Releasing
+
+The version lives in **one place**: `__version__` in `dojo_dash/__init__.py`. It drives the
+pip package version, the server's User-Agent, and the published image tags.
+
+1. Bump `__version__` (e.g. `0.1.0` → `0.1.1`) and merge to `main`.
+2. Release the current version one of two ways:
+   - **Manual dispatch** — Actions → **release** → *Run workflow*. It creates the
+     `v<version>` git tag and GitHub Release for you.
+   - **Tag push** — `git tag v0.1.1 && git push origin v0.1.1` (the tag must equal
+     `__version__`, or the run fails).
+
+The `release` workflow builds the multi-arch image and pushes
+`ghcr.io/nuday-ai/dojo-dash:{v<version>, <version>, latest, sha-<sha>}`. It **fails if that
+version is already published to GHCR**, so every release has to bump `__version__` first —
+you can't silently overwrite a released tag. Deployments that pin `v<version>` get an
+immutable image; `latest` always points at the newest release.
+
 ## License
 
 Apache-2.0. dojo-dash talks to DefectDojo purely over its public REST API and bundles none
