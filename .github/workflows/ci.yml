@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install .
+      - name: Byte-compile
+        run: python -m py_compile dojo_dash/*.py
+      - name: Offline render smoke test (no DefectDojo needed)
+        run: |
+          dojo-dash render --config config/reports.yaml \
+            --findings-json fixtures/findings.json --format both --out-dir out
+          test -s out/posture.html
+          test -s out/evidence.html
+          grep -q "SOC 2 / CASA Evidence" out/evidence.html
+          grep -q "Control → evidence map" out/evidence.html
+          # branding is de-branded to the generic default (no stray private identifiers)
+          ! grep -qi "nuday" out/posture.html
+      - name: Docker build
+        run: docker build -t dojo-dash:ci .

@@ -1,0 +1,13 @@
+.git
+.github
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+output/
+.env
+docs/screenshots
+fixtures

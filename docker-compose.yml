@@ -1,0 +1,140 @@
+# One-command demo: PostgreSQL + a minimal DefectDojo + dojo-dash.
+#
+#   cp .env.example .env
+#   docker compose up -d          # brings up Postgres, DefectDojo (:8080) and dojo-dash (:8091)
+#   docker compose run --rm seed  # (optional) load sample findings so the dashboard isn't empty
+#   open http://localhost:8091/report
+#
+# DefectDojo UI + login:  http://localhost:8080  (admin / the password in your .env)
+# dojo-dash dashboard:    http://localhost:8091/report   (evidence at /report/evidence)
+#
+# This is a DEMO stack (single-node, secrets in .env). For production, run the published
+# image behind your own auth proxy — see docs/deployment.md.
+
+x-dd-environment: &dd-env
+  DD_DEBUG: "false"
+  DD_ALLOWED_HOSTS: "*"
+  DD_DATABASE_URL: "postgresql://defectdojo:${DD_DATABASE_PASSWORD:-defectdojo}@postgres:5432/defectdojo"
+  DD_CELERY_BROKER_URL: "redis://redis:6379/0"
+  DD_SECRET_KEY: "${DD_SECRET_KEY:-please-change-me-in-dot-env}"
+  DD_CREDENTIAL_AES_256_KEY: "${DD_CREDENTIAL_AES_256_KEY:-please-change-me-32-bytes-min}"
+  DD_ADMIN_USER: "${DD_ADMIN_USER:-admin}"
+  DD_ADMIN_PASSWORD: "${DD_ADMIN_PASSWORD:-admin}"
+  DD_ADMIN_MAIL: "admin@example.com"
+  DD_ADMIN_FIRST_NAME: "Admin"
+  DD_ADMIN_LAST_NAME: "User"
+
+x-dojo-dash-env: &dash-env
+  DD_URL: "http://nginx:8080"
+  DD_ADMIN_USER: "${DD_ADMIN_USER:-admin}"
+  DD_ADMIN_PASSWORD: "${DD_ADMIN_PASSWORD:-admin}"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: defectdojo
+      POSTGRES_USER: defectdojo
+      POSTGRES_PASSWORD: "${DD_DATABASE_PASSWORD:-defectdojo}"
+    volumes:
+      - dd_postgres:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - dd_redis:/data
+    restart: unless-stopped
+
+  # One-shot: migrates the DB and creates the admin user, then exits.
+  initializer:
+    image: defectdojo/defectdojo-django:${DD_VERSION:-latest}
+    entrypoint: ["/entrypoint-initializer.sh"]
+    environment:
+      <<: *dd-env
+      DD_INITIALIZE: "true"
+    volumes:
+      - dd_media:/app/media
+    depends_on:
+      - postgres
+
+  uwsgi:
+    image: defectdojo/defectdojo-django:${DD_VERSION:-latest}
+    entrypoint: ["/entrypoint-uwsgi.sh"]
+    environment: *dd-env
+    volumes:
+      - dd_media:/app/media
+    depends_on:
+      - postgres
+      - redis
+      - initializer
+    restart: unless-stopped
+
+  celerybeat:
+    image: defectdojo/defectdojo-django:${DD_VERSION:-latest}
+    entrypoint: ["/entrypoint-celery-beat.sh"]
+    environment: *dd-env
+    depends_on:
+      - postgres
+      - redis
+      - initializer
+    restart: unless-stopped
+
+  celeryworker:
+    image: defectdojo/defectdojo-django:${DD_VERSION:-latest}
+    entrypoint: ["/entrypoint-celery-worker.sh"]
+    environment: *dd-env
+    volumes:
+      - dd_media:/app/media
+    depends_on:
+      - postgres
+      - redis
+      - initializer
+    restart: unless-stopped
+
+  nginx:
+    image: defectdojo/defectdojo-nginx:${DD_VERSION:-latest}
+    environment:
+      NGINX_METRICS_ENABLED: "false"
+    volumes:
+      - dd_media:/usr/share/nginx/html/media
+    ports:
+      - "8080:8080"
+    depends_on:
+      - uwsgi
+    restart: unless-stopped
+
+  # The star of the show. Uses the published image by default; `docker compose build`
+  # (or DOJO_DASH_IMAGE) lets you run a local build instead.
+  dojo-dash:
+    image: ${DOJO_DASH_IMAGE:-ghcr.io/nuday-ai/dojo-dash:latest}
+    build: .
+    environment:
+      <<: *dash-env
+      # Refresh quickly in the demo so edits show up fast (5 min in production).
+      REPORT_REFRESH_INTERVAL: "${REPORT_REFRESH_INTERVAL:-60}"
+      # Uncomment + configure in .env to try Critical/High email alerts:
+      # ALERT_EMAILS: "${ALERT_EMAILS:-}"
+      # ALERT_SMTP_URL: "${ALERT_SMTP_URL:-}"
+      # ALERT_FROM: "${ALERT_FROM:-}"
+      # ALERT_LINK_BASE: "http://localhost:8080"
+    ports:
+      - "8091:8091"
+    depends_on:
+      - nginx
+    restart: unless-stopped
+
+  # Opt-in: `docker compose run --rm seed` to load sample findings into DefectDojo.
+  seed:
+    image: ${DOJO_DASH_IMAGE:-ghcr.io/nuday-ai/dojo-dash:latest}
+    build: .
+    profiles: ["seed"]
+    entrypoint: ["dojo-dash", "seed", "--product-type", "Demo Platform"]
+    environment: *dash-env
+    depends_on:
+      - nginx
+
+volumes:
+  dd_postgres:
+  dd_redis:
+  dd_media:

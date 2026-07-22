@@ -1,0 +1,32 @@
+# Optional: a register of documented risk acceptances. When a finding is marked
+# risk-accepted in DefectDojo AND matches an entry here, the report attaches the
+# justification / owner / re-review trigger to it (shown in a popover on the findings
+# page, and listed in the evidence report's risk-acceptance register).
+#
+# Overridable path via $DOJO_DASH_SUPPRESSIONS. Entirely optional — with no file, accepted
+# findings still show as accepted, just without the extra justification text.
+#
+# `match.rules`/`match.checks` are substring-matched against the finding's title / tool id
+# / description / CVE ids; `match.paths` fnmatch the finding's file_path. Only
+# kind: accepted-risk entries are read by dojo-dash.
+suppressions:
+  - id: RA-1
+    kind: accepted-risk
+    owner: "Platform team"
+    justification: >-
+      setuptools ReDoS is only reachable by build tooling, which never processes
+      untrusted input in production images. Low real-world risk; patched base image
+      lands next quarter.
+    re_review_trigger: "Next base-image bump, or if setuptools enters the runtime path."
+    match:
+      rules: ["CVE-2022-40897"]
+
+  - id: RA-2
+    kind: accepted-risk
+    owner: "Cloud infrastructure"
+    justification: >-
+      This bucket serves a public static site by design and is fronted by CloudFront with
+      Origin Access Control; no private objects are stored in it.
+    re_review_trigger: "If any non-public object is ever written to the bucket."
+    match:
+      rules: ["publicly accessible"]

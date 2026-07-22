@@ -1,0 +1,197 @@
+# dojo-dash configuration — everything the dashboard shows is declared here.
+#
+# This is the SAMPLE config: it renders the bundled demo (a "Demo Platform" product
+# type with web-app / api-service / infra products). Copy it, point product_type at
+# your DefectDojo product type, edit `github`, `branding` and `control_map`, and you're
+# done — no code changes.
+#
+#   dojo-dash render                 # render every report below to HTML
+#   dojo-dash render --report posture --open
+#   dojo-dash serve                  # live-host them (behind your own auth proxy)
+#
+# Config lookups are env-overridable: DOJO_DASH_CONFIG (this file), DOJO_DASH_SLA
+# (dojo_sla.yaml), DOJO_DASH_SUPPRESSIONS (suppressions.yaml). Both sla/suppressions
+# are OPTIONAL — the report renders without them.
+
+# The DefectDojo product type your findings live under. REQUIRED.
+product_type: "Demo Platform"
+
+# Header / favicon / footer branding. All optional — sensible generic defaults apply.
+# `logo` may be a file path (relative to this file), a data: URI, or an http(s) URL.
+branding:
+  eyebrow: "Demo Platform · Security"
+  logo:                                  # e.g. ./assets/my-logo.svg — omit for the built-in mark
+  logo_alt: "Demo Platform"
+  home_url: "/"                          # where "Return to DefectDojo" points (your Dojo UI)
+  home_label: "Return to DefectDojo"
+  footer: >-
+    Rendered by dojo-dash, live from the DefectDojo API.
+
+# Repo (DefectDojo product) -> GitHub deep-link. Products whose name is in `repos` get a
+# "GitHub" pill next to the name; every product also gets a "Dojo" pill to its Dojo page.
+github:
+  org: your-org
+  repos:
+    - web-app
+    - api-service
+    - infra
+
+# Severity order (high -> low). Drives column order + coloring everywhere.
+severities: [Critical, High, Medium, Low, Info]
+
+# What counts as an OPEN issue — the default finding scope for every report.
+open_scope:
+  active: true
+  duplicate: false
+  risk_accepted: false
+  false_p: false
+  out_of_scope: false
+
+# DefectDojo "Environment" (per test) -> human label. Static scans usually import under
+# `manual`; DAST/runtime under Development / Staging / Production.
+environment_labels:
+  manual: "Source (static)"
+  scheduled: "Source (static)"
+  Development: "Dev"
+  Staging: "Staging"
+  Production: "Prod"
+  CI-PR: "PR"
+  "": "Unspecified"
+environment_order: [manual, scheduled, CI-PR, Development, Staging, Production]
+
+# Scan-type buckets: map each engagement to Static / DAST / Runtime. Anything not listed
+# falls through to the default (Static).
+scan_types:
+  DAST: ["DAST"]
+  Runtime: ["CSPM", "KSPM", "Container Images"]
+scan_type_default: "Static"
+scan_type_order: ["Static", "DAST", "Runtime"]
+
+# Finer "exact scan" breakdown for the findings-browser filter: splits Runtime into its
+# individual scanners and keeps DAST + Static as-is.
+scan_detail:
+  DAST: ["DAST"]
+  "AWS (CSPM)": ["CSPM"]
+  "EKS (KSPM)": ["KSPM"]
+  "Container images": ["Container Images"]
+scan_detail_default: "Static"
+scan_detail_order: ["Static", "DAST", "AWS (CSPM)", "EKS (KSPM)", "Container images"]
+
+# Header for the control-map's first column (Control / TSC / ISO clause / …).
+control_map_label: "TSC"
+
+# Control -> evidence map for the evidence report. Fully declarative, so it works for
+# SOC 2 / ISO 27001 / CASA / any framework. `control` and `evidence` may use these live
+# {placeholders}: total, accepted, mitigated, open_ch, engagements, products, environments.
+control_map:
+  - tsc: "CC7.1"
+    control: "Vulnerabilities are detected across code, dependencies, config, images and
+      the running environment, on a schedule."
+    evidence: "{engagements} scan engagements across {products} repositories and
+      {environments} environments — see the coverage table above."
+  - tsc: "CC7.1"
+    control: "Findings are triaged and remediated within per-severity SLAs."
+    evidence: "SLA windows in <code>dojo_sla.yaml</code>; the SLA-compliance table above.
+      {open_ch} open Critical/High right now."
+  - tsc: "CC7.2"
+    control: "New serious findings raise an alert on arrival, not just at SLA breach."
+    evidence: "Immediate Critical/High email on each poll (dojo-dash alerting) plus
+      DefectDojo's own SLA-breach notifications."
+  - tsc: "CC6 / CC7.1"
+    control: "Risk decisions are documented, owned, and time-bound."
+    evidence: "{accepted} risk-accepted findings, each with an owner, justification and
+      re-review trigger (see the risk-acceptance register)."
+  - tsc: "CC4.1"
+    control: "The whole population of findings is tracked in one system of record."
+    evidence: "{total} findings in DefectDojo — this report renders live from its API."
+
+# Publishing INTO the DefectDojo UI (dojo-dash render --publish-to-dojo): a dedicated
+# product kept apart from the scanned repos, one engagement per report.
+publish:
+  product: "Security Reports"
+  product_description: >-
+    Rendered security-posture reports (config-as-code, generated by dojo-dash). NOT a
+    scanned repository — a read-only reporting surface.
+
+reports:
+  # 1) The posture dashboard — the default landing report.
+  - name: posture
+    title: "Security Posture"
+    subtitle: "Live findings across every repo and environment — static · DAST · runtime"
+    nav_label: "Posture"                 # short label for the report switcher
+    engagement: "Posture"
+    sections:
+      - kind: kpis
+        title: "At a glance"
+        desc: >-
+          Headline counts across every repo and environment. Click any card to open that
+          slice in the filterable findings list.
+      - kind: disposition
+        title: "Disposition × severity — open, accepted & mitigated"
+        desc: >-
+          Every finding bucketed into a single disposition and split by severity, so an
+          accepted or mitigated pile hiding a High or Critical stands out. Click any count
+          to view those findings.
+        rows: [Open, Accepted, Mitigated]
+      - kind: matrix
+        title: "Open findings — scan type × severity"
+        rows: scan_type
+        desc: >-
+          The three scanning disciplines side by side — Static (source), DAST (dynamic app
+          crawl), and Runtime (live cloud / cluster / image posture). Click a cell to drill in.
+      - kind: repo-summary
+        title: "Findings by repository — open · accepted · mitigated"
+        desc: >-
+          Per-repository disposition totals. Open a repo in GitHub or DefectDojo via its
+          pills, or click a count to view the findings.
+      - kind: matrix
+        title: "Open findings — environment × severity"
+        rows: environment
+        desc: "Where the currently-open findings live. Click a cell to drill into it."
+      - kind: matrix
+        title: "Open findings — repository × severity"
+        rows: product
+        desc: "Open findings by repository and severity. Click a cell to view them."
+      - kind: findings
+        title: "Open findings — detail"
+        group_by: scan_type
+        desc: >-
+          Every open finding, grouped by scan type and sorted by severity then age. Each
+          title links to the finding in DefectDojo.
+
+  # 2) The SOC 2 / CASA evidence pack — auditor-facing, focused on the vuln-management
+  #    controls. No headline dashboard cards here; just the evidence an auditor walks.
+  - name: evidence
+    title: "SOC 2 / CASA Evidence"
+    subtitle: "Live evidence for the vulnerability-management controls — detection, SLA remediation, alerting & documented risk"
+    nav_label: "SOC 2 Evidence"
+    engagement: "Evidence"
+    sections:
+      - kind: sla-compliance
+        title: "SLA compliance — remediation on a cadence (CC7.1)"
+        desc: >-
+          Open findings against their per-severity SLA window (dojo_sla.yaml): how many are
+          still within SLA vs breached, and the within-SLA percentage. Proves findings are
+          worked on a defined cadence, not left open indefinitely.
+      - kind: scan-coverage
+        title: "Detection coverage — scanning activity by class (CC7.1)"
+        desc: >-
+          Which scan classes (static, DAST, CSPM, KSPM, container image) are exercised,
+          across how many repositories and environments. Evidence of detection breadth.
+      - kind: disposition
+        title: "Disposition × severity — the full population (CC4.1)"
+        desc: >-
+          Every finding bucketed into one disposition and split by severity — the complete,
+          single-system-of-record view the audit is taken against.
+        rows: [Open, Accepted, Mitigated, False-positive]
+      - kind: repo-summary
+        title: "Per-repository disposition (CC6 / CC7.1)"
+        desc: >-
+          Open / accepted / mitigated per repository — the backlog an auditor samples from.
+      - kind: accepted
+        title: "Risk-acceptance register (CC6 / CC7.1)"
+      - kind: control-map
+        title: "Control → evidence map"
+        desc: >-
+          Each relevant criterion mapped to the control and the live artifact that evidences
+          it. Configure the rows under <code>control_map:</code> in reports.yaml.

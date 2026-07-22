@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dojo-dash"
+dynamic = ["version"]
+description = "A config-as-code reporting dashboard and SOC 2 / CASA evidence view for DefectDojo."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "nuday-ai" }]
+keywords = ["defectdojo", "security", "dashboard", "reporting", "soc2", "vulnerability-management"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Security",
+]
+dependencies = [
+    "requests>=2.31",
+    "pyyaml>=6",
+]
+
+[project.urls]
+Homepage = "https://github.com/nuday-ai/dojo-dash"
+Source = "https://github.com/nuday-ai/dojo-dash"
+
+[project.scripts]
+dojo-dash = "dojo_dash.cli:main"
+
+[tool.setuptools]
+packages = ["dojo_dash"]
+
+[tool.setuptools.dynamic]
+version = { attr = "dojo_dash.__version__" }
+
+[tool.setuptools.package-data]
+dojo_dash = ["assets/*.svg"]

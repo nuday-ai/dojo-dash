@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- dojo-dash default mark: a security shield around a monitoring pulse. Override
+       per-deploy with branding.logo in reports.yaml. -->
+  <rect width="64" height="64" rx="14" fill="#0f1622"/>
+  <path d="M32 8 L52 16 V32 C52 44 43 52 32 56 C21 52 12 44 12 32 V16 Z"
+        fill="none" stroke="#5cc2d6" stroke-width="3"/>
+  <polyline points="19,34 27,34 31,23 37,43 41,34 45,34" fill="none"
+            stroke="#eaf0f7" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>
