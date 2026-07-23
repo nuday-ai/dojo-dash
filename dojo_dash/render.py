@@ -54,7 +54,7 @@ def _sibling(name: str, env_var: str) -> pathlib.Path:
 # Severity palette (bg for chips / heatmap tint).
 SEV_COLOR = {
     "Critical": "#7b1fa2", "High": "#c62828", "Medium": "#ef6c00",
-    "Low": "#f9a825", "Info": "#607d8b",
+    "Low": "#f9a825",
 }
 
 # Generic default brand mark — a security shield around a monitoring pulse, in the
@@ -838,7 +838,7 @@ def _link_ctx(findings_all, cfg, base):
 
 def render_report(report, findings_all, cfg, live_url=None, base=None) -> str:
     scope = {**cfg.get("open_scope", {}), **(report.get("scope") or {})}
-    sevs = cfg.get("severities", ["Critical", "High", "Medium", "Low", "Info"])
+    sevs = cfg.get("severities", ["Critical", "High", "Medium", "Low"])
     open_f = [f for f in findings_all if _in_scope(f, scope)]
     ctx = _link_ctx(findings_all, cfg, live_url if base is None else base)
     parts = []
@@ -1019,7 +1019,7 @@ def _live_link_md(live_url) -> str:
 
 def render_report_md(report, findings_all, cfg, live_url=None) -> str:
     scope = {**cfg.get("open_scope", {}), **(report.get("scope") or {})}
-    sevs = cfg.get("severities", ["Critical", "High", "Medium", "Low", "Info"])
+    sevs = cfg.get("severities", ["Critical", "High", "Medium", "Low"])
     open_f = [f for f in findings_all if _in_scope(f, scope)]
     parts = [f"## {report['title']}", "", f"_{report.get('subtitle', '')}_", ""]
     if live_url:
@@ -1297,7 +1297,7 @@ def summary_md(report, findings, cfg, limit=1990, live_url=None):
     which DefectDojo caps at 2000 chars. The full report — repo breakdown, accepted
     register, findings detail — lives in the attached HTML File."""
     scope = {**cfg.get("open_scope", {}), **(report.get("scope") or {})}
-    sevs = cfg.get("severities", ["Critical", "High", "Medium", "Low", "Info"])
+    sevs = cfg.get("severities", ["Critical", "High", "Medium", "Low"])
     open_f = [f for f in findings if _in_scope(f, scope)]
     parts = [f"## {report['title']}", "",
              f"_{report.get('subtitle', '')}_ — generated {date.today().isoformat()}", ""]

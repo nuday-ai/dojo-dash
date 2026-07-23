@@ -15,7 +15,7 @@ import argparse
 import datetime
 import sys
 
-_NUM = {"Critical": "S0", "High": "S1", "Medium": "S2", "Low": "S3", "Info": "S4"}
+_NUM = {"Critical": "S0", "High": "S1", "Medium": "S2", "Low": "S3"}
 
 # (product, engagement, environment, [ (title, severity, disposition), ... ])
 # disposition: "open" | "accepted" | "mitigated" | "fp". Engagement names line up with

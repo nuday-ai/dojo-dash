@@ -152,7 +152,7 @@ class Alerter:
         return f"{self.link_base}/finding/{f['finding_id']}" if self.link_base else ""
 
     def _bodies(self, findings):
-        order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3, "Info": 4}
+        order = {"Critical": 0, "High": 1, "Medium": 2, "Low": 3}
         findings = sorted(findings, key=lambda f: (order.get(f.get("severity"), 9),
                                                    f.get("product") or ""))
         text_lines, html_rows = [], []

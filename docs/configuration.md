@@ -20,7 +20,7 @@ the SLA section shows "not configured" and accepted findings just lack justifica
 
 ```yaml
 product_type: "My Platform"     # REQUIRED — the DefectDojo product type to report on
-severities: [Critical, High, Medium, Low, Info]   # order drives columns + colors
+severities: [Critical, High, Medium, Low]   # order drives columns + colors (Info is dropped from the pull)
 ```
 
 ### `branding`
