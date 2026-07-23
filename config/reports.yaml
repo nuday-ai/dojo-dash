@@ -37,7 +37,11 @@ github:
     - infra
 
 # Severity order (high -> low). Drives column order + coloring everywhere.
-severities: [Critical, High, Medium, Low, Info]
+# Info/Informational is intentionally excluded — those findings are dropped from
+# the pull (render._normalize_api) so they never reach any table, chart, count,
+# filter, or alert. Re-add "Info" here AND remove the skip in _normalize_api to
+# bring them back.
+severities: [Critical, High, Medium, Low]
 
 # What counts as an OPEN issue — the default finding scope for every report.
 open_scope:

@@ -21,6 +21,14 @@ import requests
 # path to use it. Handy for `dojo-dash render` against a local DefectDojo.
 _ENV_FILE = os.environ.get("DOJO_DASH_ENV", "")
 
+# Per-request timeout (seconds). Generous default because the background poller
+# pages through the WHOLE finding set, and DefectDojo's findings endpoint gets slow
+# at deep offsets on a large population — a page that trips this timeout makes the
+# whole refresh fail, so the report cache never fills and every page shows
+# "Loading latest data…". Tune up via DD_API_TIMEOUT if the finding count keeps
+# growing (or fix the root cost — see paginate()).
+_TIMEOUT = int(os.environ.get("DD_API_TIMEOUT", "300"))
+
 
 def _load_env(path: str) -> dict:
     env: dict = {}
@@ -49,26 +57,26 @@ class Dojo:
             if not pw:
                 sys.exit("No DD_API_TOKEN and no DD_ADMIN_PASSWORD (set one, or $DOJO_DASH_ENV).")
             r = requests.post(f"{self.base}/api/v2/api-token-auth/",
-                              data={"username": user, "password": pw}, timeout=30)
+                              data={"username": user, "password": pw}, timeout=_TIMEOUT)
             r.raise_for_status()
             token = r.json()["token"]
         self.headers = {"Authorization": f"Token {token}"}
 
     def get(self, path: str, **params) -> requests.Response:
-        return requests.get(f"{self.base}/api/v2/{path}", headers=self.headers, params=params, timeout=60)
+        return requests.get(f"{self.base}/api/v2/{path}", headers=self.headers, params=params, timeout=_TIMEOUT)
 
     def post(self, path: str, payload: dict) -> requests.Response:
-        return requests.post(f"{self.base}/api/v2/{path}", headers=self.headers, json=payload, timeout=60)
+        return requests.post(f"{self.base}/api/v2/{path}", headers=self.headers, json=payload, timeout=_TIMEOUT)
 
     def patch(self, path: str, payload: dict) -> requests.Response:
-        return requests.patch(f"{self.base}/api/v2/{path}", headers=self.headers, json=payload, timeout=60)
+        return requests.patch(f"{self.base}/api/v2/{path}", headers=self.headers, json=payload, timeout=_TIMEOUT)
 
     def paginate(self, path: str, **params):
         """Yield every result across pages."""
         params.setdefault("limit", 100)
         url = f"{self.base}/api/v2/{path}"
         while url:
-            r = requests.get(url, headers=self.headers, params=params, timeout=60)
+            r = requests.get(url, headers=self.headers, params=params, timeout=_TIMEOUT)
             r.raise_for_status()
             data = r.json()
             yield from data.get("results", [])

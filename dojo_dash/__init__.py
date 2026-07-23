@@ -7,4 +7,4 @@ single YAML config; branding, repositories, environments and the control map are
 declarative. See the README and docs/ for configuration and deployment.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"

@@ -178,6 +178,12 @@ def _normalize_api(dojo, pt_name: str, page_size: int = 100) -> list:
 
     rows = []
     for f in dojo.paginate("findings", test__engagement__product__prod_type=pt["id"], limit=page_size):
+        # Drop Info/Informational findings entirely — they don't belong on this
+        # dashboard (no column, no count, no alert). Filtering here is the single
+        # choke point every report + the alerter consume, so excluding them once
+        # removes them everywhere and shrinks the rows we normalize/serve.
+        if (f.get("severity") or "") in ("Info", "Informational"):
+            continue
         t = tests.get(f.get("test")) or {}
         eng = engagements.get(t.get("engagement")) or {}
         row = {
