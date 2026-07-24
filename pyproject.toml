@@ -19,7 +19,14 @@ classifiers = [
 dependencies = [
     "requests>=2.31",
     "pyyaml>=6",
+    # zoneinfo (stdlib) needs the IANA tz database, which slim/Alpine base images omit;
+    # the tzdata wheel provides it so quiet-hours gating works everywhere.
+    "tzdata",
 ]
+
+# The MongoDB dedup backend is optional — memory/file backends need no extra deps.
+[project.optional-dependencies]
+mongodb = ["pymongo>=4"]
 
 [project.urls]
 Homepage = "https://github.com/nuday-ai/dojo-dash"

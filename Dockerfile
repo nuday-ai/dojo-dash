@@ -8,10 +8,11 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Install the package (deps: requests, pyyaml). Copy metadata + source, then pip install.
+# Install the package (deps: requests, pyyaml, tzdata) plus the optional MongoDB dedup
+# backend (pymongo). Copy metadata + source, then pip install.
 COPY pyproject.toml README.md ./
 COPY dojo_dash ./dojo_dash
-RUN pip install .
+RUN pip install .[mongodb]
 
 # Bake the sample config so the image runs standalone. Mount your own over /app/config
 # (or set DOJO_DASH_CONFIG) to point at a real product type / branding / control map.

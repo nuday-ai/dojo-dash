@@ -557,7 +557,9 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     global ALERTER
     from .alerts import Alerter
-    ALERTER = Alerter()  # no-op unless ALERT_EMAILS + an SMTP URL are configured
+    # Driven by the `alerts:` block of reports.yaml (env vars override); a no-op unless
+    # recipients + an SMTP URL are configured.
+    ALERTER = Alerter(CFG.get("alerts"))
     # Background poller keeps the cache warm so every request is served instantly.
     threading.Thread(target=_poller_loop, daemon=True).start()
     httpd = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

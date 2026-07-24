@@ -60,6 +60,62 @@ report). Maps directly to the API's booleans.
 open_scope: { active: true, duplicate: false, risk_accepted: false, false_p: false, out_of_scope: false }
 ```
 
+### `alerts`
+
+Email alerts on **newly-appeared** findings. The live server (`dojo-dash serve`) already
+re-pulls every finding on a fixed cadence to keep the dashboard warm; that same poll is
+used as an always-on detector. When a finding at an alert severity appears that wasn't
+present before, one batched email is sent. Fully **opt-in**: nothing happens unless
+recipients **and** an SMTP URL are configured. Every value is overridable by an environment
+variable — resolution is **env var > this yaml > default** — and secrets stay env-only.
+
+```yaml
+alerts:
+  enabled: true                    # master switch
+  severities: [Critical, High]     # which severities alert          (ALERT_SEVERITIES)
+  recipients: ["secops@example.com"] # or set ALERT_EMAILS
+  subject_prefix: "[dojo-dash] "   #                                 (ALERT_SUBJECT_PREFIX)
+  link_base: "https://dojo.example.com"  # deep-link findings        (ALERT_LINK_BASE)
+  min_interval_seconds: 0          # min seconds between emails       (ALERT_MIN_INTERVAL_SECONDS)
+  quiet_hours:                     # only email inside a local-time window; hold otherwise
+    tz: America/Los_Angeles        # any IANA zone; "" disables       (ALERT_HOURS_TZ)
+    start: 8                       # inclusive local hour (24h)       (ALERT_HOURS_START)
+    end: 20                        # exclusive local hour             (ALERT_HOURS_END)
+    gate_all: true                 # false => Critical pages 24/7     (ALERT_HOURS_GATE_ALL)
+  dedup:                           # remembers which findings were already emailed
+    backend: memory                # memory | file | mongodb          (ALERT_DEDUP_BACKEND)
+    mongo:                         # when backend: mongodb (needs the `mongodb` extra)
+      uri: mongodb://localhost:27017          #                       (ALERT_DEDUP_MONGO_URI)
+      database: dojo_dash
+      collection: alerted_findings
+    file:
+      path: /app/state/alert-dedup.json       # put it on a volume    (ALERT_STATE_FILE)
+```
+
+**SMTP** is env-only (it carries a password): set `ALERT_SMTP_URL` (falls back to
+`DD_EMAIL_URL`), e.g. `submission://user:pass@smtp.example.com:587`. Schemes: `smtp`
+(25), `smtps`/`smtp+ssl` (465, implicit TLS), `smtp+tls`/`submission` (587, STARTTLS).
+
+**Never spams the backlog.** On its first poll against an *empty* dedup store it
+baseline-seeds every currently-open finding as already-seen and stays silent — only
+findings appearing in later polls alert.
+
+**Quiet hours** hold (never drop) off-window findings and flush them when the window next
+opens. With `gate_all: false`, Critical findings bypass the window and email 24/7 while
+High still waits.
+
+**Dedup backends** control whether "already emailed" survives a restart:
+- `memory` (default) — in-process only; a restart re-baselines (never double-sends, but a
+  finding that first appeared during downtime won't alert).
+- `file` — an atomic JSON file at `path`; durable only if the path is on a persistent
+  volume.
+- `mongodb` — a `{_id: finding_id}` collection; install the extra (`pip install
+  dojo-dash[mongodb]`) and point a lightweight Mongo at it. Durable across restarts; if
+  Mongo is unreachable at boot it logs and falls back to `memory` for that run.
+
+A finding id is written to the store **only after its email successfully sends**, so a send
+failure retries and nothing is ever emailed twice.
+
 ### Environments — `environment_labels` / `environment_order`
 
 DefectDojo tags each test with an environment. Relabel the raw names into human terms and

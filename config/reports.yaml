@@ -51,6 +51,31 @@ open_scope:
   false_p: false
   out_of_scope: false
 
+# Email alerts on newly-appeared findings, piggybacking on the live server's poll (see
+# docs/configuration.md). Entirely OPTIONAL and opt-in: does nothing unless `recipients`
+# (or the ALERT_EMAILS env) AND an SMTP URL (ALERT_SMTP_URL, or DefectDojo's DD_EMAIL_URL)
+# are set. Every value below is overridable by an env var (env > yaml > default).
+alerts:
+  enabled: true                    # master switch
+  severities: [Critical, High]     # which severities alert
+  # recipients: ["secops@example.com"]   # or set ALERT_EMAILS
+  subject_prefix: "[dojo-dash] "
+  # link_base: "https://dojo.example.com"  # deep-link findings in the email
+  min_interval_seconds: 0          # min seconds between emails (0 = once per poll)
+  quiet_hours:                     # only email inside this local-time window; hold otherwise
+    tz: America/Los_Angeles        # any IANA zone; "" disables gating
+    start: 8                       # inclusive local hour (24h)
+    end: 20                        # exclusive local hour
+    gate_all: true                 # false => Critical bypasses the window (pages 24/7)
+  dedup:                           # remembers which findings were already emailed
+    backend: memory                # memory | file | mongodb
+    mongo:                         # used when backend: mongodb
+      uri: mongodb://localhost:27017
+      database: dojo_dash
+      collection: alerted_findings
+    file:                          # used when backend: file
+      path: ""                     # e.g. /app/state/alert-dedup.json (put it on a volume)
+
 # DefectDojo "Environment" (per test) -> human label. Static scans usually import under
 # `manual`; DAST/runtime under Development / Staging / Production.
 environment_labels:
