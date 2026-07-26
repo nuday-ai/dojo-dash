@@ -113,11 +113,20 @@ infrastructure example.
 
 ## Development
 
+Dependencies are pinned in `uv.lock` (checked in), so every contributor and CI run
+resolves the same tree. `--frozen` uses the lockfile as-is and fails rather than
+silently re-resolving it:
+
 ```bash
-pip install -e .
-dojo-dash render --findings-json fixtures/findings.json --out-dir out   # offline smoke test
-python -m py_compile dojo_dash/*.py
+uv sync --frozen                                                          # exact locked env, incl. pytest
+uv run --frozen dojo-dash render --findings-json fixtures/findings.json --out-dir out   # offline smoke test
+uv run --frozen pytest -q
+uv lock --check                                                           # lockfile matches pyproject.toml
 ```
+
+After changing a dependency in `pyproject.toml`, run `uv lock` and commit the updated
+`uv.lock` in the same change. Plain `pip install -e .` still works if you'd rather not
+use uv — you just get floor-resolved versions instead of the locked ones.
 
 ## Releasing
 

@@ -28,6 +28,12 @@ dependencies = [
 [project.optional-dependencies]
 mongodb = ["pymongo>=4"]
 
+# Test tooling. A PEP 735 group rather than an extra: it's for developing dojo-dash,
+# never for installing it, so it stays out of the published wheel's metadata while
+# still being pinned by uv.lock. `uv run pytest` picks it up with no extra flags.
+[dependency-groups]
+dev = ["pytest>=8"]
+
 [project.urls]
 Homepage = "https://github.com/nuday-ai/dojo-dash"
 Source = "https://github.com/nuday-ai/dojo-dash"

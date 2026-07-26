@@ -1124,37 +1124,43 @@ vertical-align:middle;line-height:18px}}
 border:1px solid var(--accent);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:500;
 white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .1s;z-index:100;
 box-shadow:0 8px 24px rgba(0,0,0,.5)}}
-/* single-report nav bar (report page + show page) */
-.navbar{{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
-margin:20px 0 4px;padding:11px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel2)}}
-.nav-left,.nav-right{{display:flex;align-items:center;gap:12px;flex-wrap:wrap}}
-.nav-btn{{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-weight:700;font-size:13.5px;
-padding:9px 16px;border-radius:9px;border:1px solid var(--line);color:var(--ink);background:var(--panel);
-transition:border-color .12s,background .12s,transform .12s}}
-.nav-btn:hover{{border-color:var(--accent);background:#12303a;transform:translateY(-1px)}}
-.nav-btn.primary{{background:var(--accent);color:#04121a;border-color:var(--accent)}}
-.nav-btn.primary:hover{{filter:brightness(1.08);background:var(--accent)}}
-/* report switcher (tabs) — links every configured report; active one highlighted */
-.nav-tabs{{display:inline-flex;gap:4px;padding:4px;border:1px solid var(--line);border-radius:11px;
-background:var(--bg)}}
-.nav-tab{{display:inline-flex;align-items:center;text-decoration:none;font-weight:600;font-size:13px;
-padding:7px 14px;border-radius:8px;color:var(--mut);white-space:nowrap;transition:color .12s,background .12s}}
-.nav-tab:hover{{color:var(--ink);background:var(--panel)}}
-.nav-tab.on{{color:var(--ink);background:var(--panel);box-shadow:inset 0 0 0 1px var(--line)}}
-.nav-tab.on::before{{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);
-margin-right:8px}}
+/* primary nav (served pages): one tab per destination, sitting ON the header rule.
+   Underline-active rather than pill-in-a-box — the old bar nested a bordered tab group
+   and two buttons inside a bordered bar, which read as clutter and wrapped badly. */
+.navbar{{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;margin:12px 0 4px;
+border-bottom:1px solid var(--line)}}
+/* When a tab strip follows (served pages only — inject_bar adds .tabbed), the strip's
+   rule IS the header's boundary. Keeping both drew two parallel lines 60px apart. */
+header.rpt.tabbed{{border-bottom:0;padding-bottom:14px;margin-bottom:0}}
+.nav-tabs{{display:flex;gap:2px;max-width:100%;overflow-x:auto;scrollbar-width:none;margin-bottom:-1px}}
+.nav-tabs::-webkit-scrollbar{{display:none}}
+.nav-tab{{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-weight:600;
+font-size:13.5px;padding:11px 16px;color:var(--mut);white-space:nowrap;border-radius:9px 9px 0 0;
+border-bottom:2px solid transparent;transition:color .12s,background .12s,border-color .12s}}
+.nav-tab:hover{{color:var(--ink);background:var(--panel2)}}
+.nav-tab.on{{color:var(--ink);border-bottom-color:var(--accent)}}
+.nav-tab .tab-ico{{font-size:13px;line-height:1;opacity:.75}}
+/* count pill on the findings tab — how many findings the browser would list unfiltered */
+.nav-tab .tab-n{{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--mut);
+background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:1px 8px}}
+.nav-tab.on .tab-n{{color:var(--ink);border-color:var(--mut)}}
+/* header top-right action cluster (force-refresh + return to DefectDojo), sitting above
+   the freshness stamp so every "state of the data" affordance lives in one corner */
+.hdr-actions{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}}
+.stamp b{{color:#cfd9e4;font-weight:600}}
 .nav-dojo{{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-weight:600;font-size:13px;
 padding:8px 14px;border-radius:9px;border:1px solid var(--line);color:var(--mut);background:transparent;
 transition:border-color .12s,color .12s}}
 .nav-dojo:hover{{border-color:var(--accent);color:var(--ink)}}
-.fresh{{color:var(--mut);font-size:12.5px}}
-.nav-btn.refresh{{font-size:12.5px;font-weight:600;padding:7px 13px;color:var(--mut)}}
-.nav-btn.refresh .ref-ico{{font-size:15px;line-height:1;display:inline-block}}
-.nav-btn.refresh:hover{{color:var(--ink)}}
-.nav-btn.refresh.busy{{opacity:.7;pointer-events:none}}
-.nav-btn.refresh.busy .ref-ico{{animation:spin .7s linear infinite}}
+.nav-refresh{{display:inline-flex;align-items:center;gap:7px;text-decoration:none;font-weight:600;
+font-size:13px;padding:8px 14px;border-radius:9px;border:1px solid var(--line);color:var(--mut);
+background:var(--panel);transition:border-color .12s,color .12s,background .12s}}
+.nav-refresh:hover{{border-color:var(--accent);color:var(--ink);background:#12303a}}
+.nav-refresh .ref-ico{{font-size:15px;line-height:1;display:inline-block}}
+.nav-refresh.busy{{opacity:.7;pointer-events:none}}
+.nav-refresh.busy .ref-ico{{animation:spin .7s linear infinite}}
 @keyframes spin{{to{{transform:rotate(360deg)}}}}
-@media (prefers-reduced-motion:reduce){{.nav-btn.refresh.busy .ref-ico{{animation:none}}}}
+@media (prefers-reduced-motion:reduce){{.nav-refresh.busy .ref-ico{{animation:none}}}}
 /* "Justification" link + modal (show page) */
 .just-link{{color:var(--accent);text-decoration:none;font-size:12px;white-space:nowrap}}
 .just-link:hover{{text-decoration:underline}}

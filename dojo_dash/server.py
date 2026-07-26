@@ -33,6 +33,7 @@ Config (environment):
   ALERT_*                   see alerts.py for the email-alert configuration
 """
 import os
+import re
 import sys
 import threading
 import time
@@ -150,45 +151,49 @@ def _report_path(cfg: dict) -> str:
     return f'/report/{reps[0]["name"]}' if reps else "/report"
 
 
-def _report_tabs(cfg: dict, current) -> str:
-    """A switcher linking every configured report, so the dashboard home surfaces the
-    others (e.g. the SOC 2 evidence report) instead of them being URL-only. Rendered
-    only when there's more than one report. The active report is highlighted."""
-    reps = cfg.get("reports", [])
-    if len(reps) < 2:
-        return ""
-    tabs = []
-    for r in reps:
-        label = esc(r.get("nav_label") or r.get("title") or r["name"])
-        on = " on" if r.get("name") == current else ""
-        tabs.append(f'<a class="nav-tab{on}" href="/report/{esc(r["name"])}">{label}</a>')
-    return '<div class="nav-tabs">' + "".join(tabs) + "</div>"
+def _nav_tabs(cfg: dict, current, total=None) -> str:
+    """The primary navigation: one tab per configured report, then the findings browser.
+
+    Every destination the dashboard has is on this strip, which is what lets the old
+    per-page action buttons go away — "Browse & filter all findings" is now the findings
+    tab, and the findings page's "Back to report" is just the report tab. `current` is a
+    report name, or the literal "findings" on the browser page. `total` (when known) is
+    shown as a count pill: what the browser lists with no filters applied.
+    """
+    def tab(href: str, inner: str, on: bool) -> str:
+        cls = "nav-tab on" if on else "nav-tab"
+        cur = ' aria-current="page"' if on else ""
+        return f'<a class="{cls}"{cur} href="{href}">{inner}</a>'
+
+    tabs = [tab(f'/report/{esc(r["name"])}',
+                esc(r.get("nav_label") or r.get("title") or r["name"]),
+                r.get("name") == current)
+            for r in cfg.get("reports", [])]
+    pill = f'<span class="tab-n">{total:,}</span>' if isinstance(total, int) else ""
+    tabs.append(tab("/report/findings",
+                    '<span class="tab-ico" aria-hidden="true">&#128269;</span>'
+                    f'All findings{pill}',
+                    current == "findings"))
+    return ('<nav class="navbar" aria-label="Reports"><div class="nav-tabs">'
+            + "".join(tabs) + "</div></nav>")
 
 
-def inject_bar(doc: str, cfg: dict, when: str, *, mode: str = "report",
-               auto_refresh: bool = True, current=None) -> str:
-    """Insert the report-switcher + nav bar + freshness note below the header.
+def inject_bar(doc: str, cfg: dict, when: str, *, auto_refresh: bool = True,
+               current=None, total=None) -> str:
+    """Insert the tab strip below the header, and the freshness + actions into its corner.
 
-    mode="report"   -> a primary button to the filterable findings list.
-    mode="findings" -> a back button to the report.
-    Both carry a 'Return to DefectDojo' button (branding.home_url) and, when more than
-    one report is configured, a switcher between reports.
+    Two zones, each with one job: the strip below the header is navigation only, and the
+    header's top-right holds everything about the *state of the data* (how fresh it is,
+    force a re-pull, leave for DefectDojo). Previously both were crammed into one bordered
+    bar, which wrapped the freshness note onto its own line at common widths.
     """
     freshness = (f'auto-refreshes every {_human_interval(REFRESH_INTERVAL)}' if auto_refresh
-                 else f'updates in the background every {_human_interval(REFRESH_INTERVAL)}')
-    tabs = _report_tabs(cfg, current)
-    if mode == "findings":
-        action = (f'<a class="nav-btn" href="{_report_path(cfg)}">'
-                  '<span>&#8592;</span> Back to report</a>')
-    else:
-        action = ('<a class="nav-btn primary" href="/report/findings">'
-                  '<span>&#128269;</span> Browse &amp; filter all findings <span>&#8594;</span></a>')
-    left = tabs + action
+                 else f'refreshes in the background every {_human_interval(REFRESH_INTERVAL)}')
     # Force-refresh: pulls fresh data from DefectDojo now instead of waiting for the
     # background cadence. `next` is set client-side to the CURRENT url (filters/page
     # preserved); the click shows a spinning, disabled state until the redirect lands.
     refresh = (
-        '<a class="nav-btn refresh" id="refreshBtn" href="/report/refresh" '
+        '<a class="nav-refresh" id="refreshBtn" href="/report/refresh" '
         'title="Pull the latest findings from DefectDojo now">'
         '<span class="ref-ico" aria-hidden="true">&#8635;</span> Refresh</a>'
         '<script>(function(){var b=document.getElementById("refreshBtn");if(!b)return;'
@@ -196,21 +201,23 @@ def inject_bar(doc: str, cfg: dict, when: str, *, mode: str = "report",
         'b.addEventListener("click",function(){b.classList.add("busy");'
         'b.setAttribute("aria-busy","true");b.lastChild.textContent=" Refreshing\\u2026";});})();</script>'
     )
-    bar = (
-        '<div class="navbar"><div class="nav-left">' + left + '</div>'
-        '<div class="nav-right">'
-        f'<span class="fresh">data as of <b style="color:#eaf0f7">{esc(when)}</b> · {freshness}</span>'
-        + refresh +
-        '</div></div>'
-    )
-    # Return-to-DefectDojo lives in the header's top-right. Root-relative by default so it
-    # reuses the same proxy session; override with branding.home_url.
+    # Return-to-DefectDojo is root-relative by default so it reuses the same proxy
+    # session; override with branding.home_url.
     b = cfg.get("branding") or {}
     home_url = esc(b.get("home_url", "/"))
     home_label = esc(b.get("home_label", "Return to DefectDojo"))
     dojo_btn = f'<a class="nav-dojo" href="{home_url}"><span>&#8617;</span> {home_label}</a>'
-    doc = doc.replace('<div class="hdr-right">', '<div class="hdr-right">' + dojo_btn, 1)
-    return doc.replace("</header>", "</header>\n" + bar, 1)
+    # Tell the header a tab strip follows, so it drops its own bottom rule (see .tabbed).
+    doc = doc.replace('<header class="rpt">', '<header class="rpt tabbed">', 1)
+    doc = doc.replace('<div class="hdr-right">',
+                      f'<div class="hdr-right"><div class="hdr-actions">{refresh}{dojo_btn}</div>', 1)
+    # Overwrite the page template's "generated at" stamp. On a served page the meaningful
+    # timestamp is the DATA's (when the cache was pulled), not the render's — and carrying
+    # both here and in the nav read as two clocks a few inches apart. The static CLI
+    # renderer never calls this, so it keeps the generation stamp.
+    stamp = (f'<div class="stamp">data as of <b>{esc(when)}</b><br>{freshness}</div>')
+    doc = re.sub(r'<div class="stamp">.*?</div>', lambda _: stamp, doc, count=1, flags=re.S)
+    return doc.replace("</header>", "</header>\n" + _nav_tabs(cfg, current, total), 1)
 
 
 # --- filterable / paginated findings "show" page ---------------------------
@@ -468,7 +475,11 @@ def render_findings_page(rows, when, params, cfg) -> str:
     body = f'<section>{form}{table}{pager}</section>' + MODAL_HTML
     doc = page(cfg, title="Findings", subtitle="Filter live findings — open each in DefectDojo.",
                body=body, gen=_now_stamp(), live="")
-    return inject_bar(doc, cfg, when, mode="findings", auto_refresh=False, current=None)
+    # auto_refresh=False: this page is NOT meta-refreshed (a reload mid-triage would
+    # discard the filters/page you're on), so the strip says so. `total` here is the
+    # FILTERED count, so pass the unfiltered set size for the tab pill.
+    return inject_bar(doc, cfg, when, auto_refresh=False, current="findings",
+                      total=len(rows))
 
 
 # --- server ----------------------------------------------------------------
@@ -541,7 +552,7 @@ class Handler(BaseHTTPRequestHandler):
             # base="" -> tables link root-relative (/report/findings, /finding/<id>,
             # /product/<id>), reusing the same proxy session as the DefectDojo UI.
             doc = inject_bar(render_report(report, rows, CFG, base=""), CFG, when,
-                             mode="report", current=report["name"])
+                             current=report["name"], total=len(rows))
             doc = _with_meta_refresh(doc, REFRESH_INTERVAL)
         except Exception as e:  # noqa: BLE001 — render over cached rows shouldn't fail
             return self._send(500, render_error(500, f"Render error: {esc(e)}"))
