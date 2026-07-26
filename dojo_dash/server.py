@@ -44,7 +44,8 @@ from urllib.parse import urlsplit, parse_qs, urlencode
 from . import __version__
 from .render import (
     page, esc, load_config, render_report, _normalize_api,
-    _chip, _dim, _disposition, _repo_cell, _finding_title, _link_ctx, DISPOSITIONS,
+    _chip, _dim, _disposition, _disp_chip, _repo_cell, _finding_title, _link_ctx,
+    DISPOSITIONS,
 )
 
 PORT = int(os.environ.get("REPORT_PORT", "8091"))
@@ -151,35 +152,51 @@ def _report_path(cfg: dict) -> str:
     return f'/report/{reps[0]["name"]}' if reps else "/report"
 
 
-def _nav_tabs(cfg: dict, current, total=None) -> str:
+def _nav_tabs(cfg: dict, current, counts=None) -> str:
     """The primary navigation: one tab per configured report, then the findings browser.
 
     Every destination the dashboard has is on this strip, which is what lets the old
     per-page action buttons go away — "Browse & filter all findings" is now the findings
     tab, and the findings page's "Back to report" is just the report tab. `current` is a
-    report name, or the literal "findings" on the browser page. `total` (when known) is
-    shown as a count pill: what the browser lists with no filters applied.
+    report name, or the literal "findings" on the browser page.
+
+    The findings tab deliberately lands on `?disposition=Open` and counts only the OPEN
+    findings. Landing on the unfiltered set showed accepted/mitigated/false-positive
+    findings interleaved with live ones, which reads as a far bigger backlog than there
+    is. The other dispositions are one select away (and the Disposition dropdown shows
+    "Open" pre-selected, so the filter is visible rather than hidden). `counts` is
+    (open, total) when known.
     """
-    def tab(href: str, inner: str, on: bool) -> str:
+    def tab(href: str, inner: str, on: bool, title: str = "") -> str:
         cls = "nav-tab on" if on else "nav-tab"
         cur = ' aria-current="page"' if on else ""
-        return f'<a class="{cls}"{cur} href="{href}">{inner}</a>'
+        t = f' title="{esc(title)}"' if title else ""
+        return f'<a class="{cls}"{cur}{t} href="{href}">{inner}</a>'
 
     tabs = [tab(f'/report/{esc(r["name"])}',
                 esc(r.get("nav_label") or r.get("title") or r["name"]),
                 r.get("name") == current)
             for r in cfg.get("reports", [])]
-    pill = f'<span class="tab-n">{total:,}</span>' if isinstance(total, int) else ""
-    tabs.append(tab("/report/findings",
+    pill, hint = "", ""
+    if counts:
+        open_n, total_n = counts
+        pill = f'<span class="tab-n">{open_n:,}</span>'
+        hint = f"{open_n:,} open of {total_n:,} findings — other dispositions via the filter"
+    tabs.append(tab("/report/findings?disposition=Open",
                     '<span class="tab-ico" aria-hidden="true">&#128269;</span>'
-                    f'All findings{pill}',
-                    current == "findings"))
+                    f'Open findings{pill}',
+                    current == "findings", hint))
     return ('<nav class="navbar" aria-label="Reports"><div class="nav-tabs">'
             + "".join(tabs) + "</div></nav>")
 
 
+def _counts(rows) -> tuple:
+    """(open, total) over the whole snapshot — drives the findings tab's count pill."""
+    return sum(1 for f in rows if _disposition(f) == "Open"), len(rows)
+
+
 def inject_bar(doc: str, cfg: dict, when: str, *, auto_refresh: bool = True,
-               current=None, total=None) -> str:
+               current=None, counts=None) -> str:
     """Insert the tab strip below the header, and the freshness + actions into its corner.
 
     Two zones, each with one job: the strip below the header is navigation only, and the
@@ -217,7 +234,7 @@ def inject_bar(doc: str, cfg: dict, when: str, *, auto_refresh: bool = True,
     # renderer never calls this, so it keeps the generation stamp.
     stamp = (f'<div class="stamp">data as of <b>{esc(when)}</b><br>{freshness}</div>')
     doc = re.sub(r'<div class="stamp">.*?</div>', lambda _: stamp, doc, count=1, flags=re.S)
-    return doc.replace("</header>", "</header>\n" + _nav_tabs(cfg, current, total), 1)
+    return doc.replace("</header>", "</header>\n" + _nav_tabs(cfg, current, counts), 1)
 
 
 # --- filterable / paginated findings "show" page ---------------------------
@@ -257,9 +274,13 @@ def _fmt_age(days) -> str:
 
 
 def _disp_cell(f: dict) -> str:
-    """Disposition text; for accepted findings that matched a registry entry, append a
-    'Justification' link that opens the modal (kept out of the table to stay readable)."""
-    disp = esc(_disposition(f) or "—")
+    """Disposition as a COLOURED chip (same palette the reports' disposition matrix uses:
+    Open red, Accepted slate, Mitigated green, False-positive purple), so a mixed list is
+    scannable — plain text made resolved rows look identical to live ones. For accepted
+    findings that matched a registry entry, append a 'Justification' link that opens the
+    modal (kept out of the table to stay readable)."""
+    d = _disposition(f)
+    disp = _disp_chip(d) if d else "—"
     if f.get("justification"):
         disp += (
             f' · <a class="just-link" href="#" data-ra="{esc(f.get("ra", ""))}" '
@@ -476,10 +497,10 @@ def render_findings_page(rows, when, params, cfg) -> str:
     doc = page(cfg, title="Findings", subtitle="Filter live findings — open each in DefectDojo.",
                body=body, gen=_now_stamp(), live="")
     # auto_refresh=False: this page is NOT meta-refreshed (a reload mid-triage would
-    # discard the filters/page you're on), so the strip says so. `total` here is the
-    # FILTERED count, so pass the unfiltered set size for the tab pill.
+    # discard the filters/page you're on), so the strip says so. The tab pill counts the
+    # whole snapshot, not `total` above — that one is already filtered.
     return inject_bar(doc, cfg, when, auto_refresh=False, current="findings",
-                      total=len(rows))
+                      counts=_counts(rows))
 
 
 # --- server ----------------------------------------------------------------
@@ -552,7 +573,7 @@ class Handler(BaseHTTPRequestHandler):
             # base="" -> tables link root-relative (/report/findings, /finding/<id>,
             # /product/<id>), reusing the same proxy session as the DefectDojo UI.
             doc = inject_bar(render_report(report, rows, CFG, base=""), CFG, when,
-                             current=report["name"], total=len(rows))
+                             current=report["name"], counts=_counts(rows))
             doc = _with_meta_refresh(doc, REFRESH_INTERVAL)
         except Exception as e:  # noqa: BLE001 — render over cached rows shouldn't fail
             return self._send(500, render_error(500, f"Render error: {esc(e)}"))

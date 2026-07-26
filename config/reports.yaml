@@ -192,7 +192,10 @@ reports:
   #    controls. No headline dashboard cards here; just the evidence an auditor walks.
   - name: evidence
     title: "SOC 2 / CASA Evidence"
-    subtitle: "Live evidence for the vulnerability-management controls — detection, SLA remediation, alerting & documented risk"
+    # Keep to ~80 chars: .sub is capped at 60ch (~567px), so a longer subtitle wraps to a
+    # second line, which makes the header taller here than on the other tabs and shifts
+    # the tab strip when you switch between them.
+    subtitle: "Live evidence — detection, SLA remediation, alerting & documented risk"
     nav_label: "SOC 2 Evidence"
     engagement: "Evidence"
     sections:
