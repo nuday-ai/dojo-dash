@@ -75,7 +75,8 @@ ALERTER = None
 def _fetch_rows():
     from .dojo_api import Dojo  # imported lazily so /health works with no creds
     dojo = Dojo(os.environ.get("DD_URL"))
-    return _normalize_api(dojo, CFG["product_type"], page_size=PAGE_SIZE)
+    return _normalize_api(dojo, CFG["product_type"], page_size=PAGE_SIZE,
+                          env_exclude=set(CFG.get("environment_exclude") or []))
 
 
 def _store(rows):

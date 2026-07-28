@@ -136,12 +136,18 @@ def load_config(path=None) -> dict:
 
 
 # --------------------------------------------------------------------------- data
-def _normalize_api(dojo, pt_name: str, page_size: int = 100) -> list:
+def _normalize_api(dojo, pt_name: str, page_size: int = 100, env_exclude=None) -> list:
     """Pull every finding under the product type and resolve product / environment /
     engagement names via the id maps (one paginate per collection, joined in memory).
 
     page_size sets the API page limit: a larger value means far fewer round-trips
-    (the served report server passes a big one to keep first-load latency down)."""
+    (the served report server passes a big one to keep first-load latency down).
+
+    env_exclude: RAW DefectDojo environment names (e.g. {"Staging"}) whose findings
+    are dropped entirely — no rows, no KPI counts, no matrix row, no alerts (this is
+    the single choke point everything consumes). Config key: ``environment_exclude``.
+    Intended for environments that are deliberately offline (hibernated) so their
+    frozen findings don't read as live posture."""
     pt = next((p for p in dojo.paginate("product_types", limit=page_size) if p["name"] == pt_name), None)
     if not pt:
         sys.exit(f"Product type '{pt_name}' not found in DefectDojo.")
@@ -186,6 +192,10 @@ def _normalize_api(dojo, pt_name: str, page_size: int = 100) -> list:
             continue
         t = tests.get(f.get("test")) or {}
         eng = engagements.get(t.get("engagement")) or {}
+        # Deliberately-offline environments (config: environment_exclude) are
+        # dropped here at the same choke point as Info severity — everywhere at once.
+        if env_exclude and envs.get(t.get("environment"), "") in env_exclude:
+            continue
         row = {
             "severity": f.get("severity"),
             "product": products.get(eng.get("product"), "?"),
@@ -1373,7 +1383,8 @@ def main():
         from dojo_api import Dojo
         dojo = Dojo(args.url, args.token)
         print(f"DefectDojo : {dojo.base}")
-        findings = _normalize_api(dojo, cfg["product_type"])
+        findings = _normalize_api(dojo, cfg["product_type"],
+                                  env_exclude=set(cfg.get("environment_exclude") or []))
         print(f"Fetched {len(findings)} findings for product type '{cfg['product_type']}'")
 
     reports = cfg.get("reports", [])

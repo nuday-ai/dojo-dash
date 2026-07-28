@@ -88,6 +88,12 @@ environment_labels:
   "": "Unspecified"
 environment_order: [manual, scheduled, CI-PR, Development, Staging, Production]
 
+# RAW environment names to drop from the report entirely — no rows, no KPI
+# counts, no alerts (filtered at the single data choke point). For
+# deliberately-offline (hibernated) environments whose frozen findings would
+# otherwise read as live posture. e.g.:
+# environment_exclude: [Staging]
+
 # Scan-type buckets: map each engagement to Static / DAST / Runtime. Anything not listed
 # falls through to the default (Static).
 scan_types:
