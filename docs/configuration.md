@@ -196,8 +196,53 @@ reports:
 | `sla-compliance` | Open vs SLA window per severity (needs `dojo_sla.yaml`). |
 | `scan-coverage` | Scanning activity by engagement (repos × environments × findings). |
 | `control-map` | The `control_map` table. |
+| `control-registry-summary` | Status totals + per-group breakdown from `control_registry` (see below). |
+| `control-registry` | Every requirement with its status and evidence. Optional `statuses: [not-met, todo]` narrows to a subset. |
 
 Every section takes an optional `title` and `desc`.
+
+### `control_registry`
+
+A **checked-in** list of framework requirements — ASVS, ISO 27001, a lab's own
+checklist — each with a status and an evidence pointer. Unlike every other section,
+the two `control-registry*` kinds read **no DefectDojo data at all**: they render
+from this file alone, so the same file always produces the same page.
+
+That is the point rather than an optimisation. A compliance assessor is shown a
+specific claim about the codebase, and a number derived from a live finding queue
+would move between the day you submit and the day they open the link. It also means
+these sections still render when Dojo is unreachable.
+
+```yaml
+control_registry:
+  file: asvs_controls.json     # relative to the config dir; env: DOJO_DASH_CONTROLS
+```
+
+The file (JSON):
+
+```json
+{
+  "framework": {"label": "ASVS 4.0.3 Level 1", "source": "config/asvs_map.yaml",
+                "note": "Rendered from a checked-in registry, not the finding queue."},
+  "statuses":  [{"key": "met", "label": "Met", "tone": "good"},
+                {"key": "not-met", "label": "NOT MET", "tone": "bad"}],
+  "attributes":[{"key": "how", "label": "How verified"},
+                {"key": "evidence", "label": "Evidence"},
+                {"key": "owner", "label": "Owner"}],
+  "groups":    [{"id": "V2", "name": "Authentication"}],
+  "controls":  [{"id": "V2.1.1", "group": "V2", "text": "Passwords are 12+ chars.",
+                 "status": "met", "attrs": {"how": "code-review",
+                 "evidence": "policy.py:44", "owner": "app"},
+                 "notes": "optional nuance", "cwe": "521"}]
+}
+```
+
+`statuses` order drives the column order everywhere. `tone` is one of `good`, `ok`,
+`muted`, `warn`, `bad` and picks the colour — a palette kept **separate** from the
+severity colours, so a "not met" row doesn't read as a Critical finding. The
+`evidence` attribute is merged with `notes` into a single trailing cell; the other
+attributes each get their own column. Generate this file from whatever registry you
+already maintain — a missing file degrades the sections to "not configured".
 
 ### `publish`
 

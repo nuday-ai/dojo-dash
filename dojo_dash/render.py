@@ -579,6 +579,188 @@ def render_repo_summary(findings_all, cfg, title, ctx=None, desc=None) -> str:
             f'</table></div></section>')
 
 
+# ------------------------------------------------------------- control registry
+# A checked-in list of framework requirements (ASVS, ISO 27001, a lab's own
+# checklist) with a status and evidence pointer per requirement. Unlike every other
+# section in this file, NOTHING here comes from the DefectDojo API: the render is a
+# pure function of the registry file, so the same commit always produces the same
+# report. That is a requirement, not an optimisation — a compliance assessor is
+# shown a specific claim about the codebase and it must not drift under them
+# between submission and review.
+#
+# Registry shape (see docs/configuration.md):
+#   {framework:{...}, statuses:[{key,label,tone}], attributes:[{key,label}],
+#    groups:[{id,name}], controls:[{id,group,text,status,attrs{},notes?,cwe?}]}
+
+# Tone -> colour. Deliberately NOT the severity palette: these are compliance
+# verdicts, and reusing the red/amber severity colours would invite reading a
+# "not met" row as a Critical finding.
+TONE_COLOR = {
+    "good": "#2e7d32",   # met
+    "ok": "#00695c",     # compensating — satisfied, but by a different control
+    "muted": "#455a64",  # not applicable
+    "bad": "#c62828",    # confirmed gap
+    "warn": "#ef6c00",   # unassessed — NOT a pass, and must not read as one
+}
+
+
+def _control_registry(cfg):
+    """Load the control registry, or None when not configured.
+
+    Resolution order: DOJO_DASH_CONTROLS, then `control_registry.file` in
+    reports.yaml (relative to the config dir), then a `controls.json` sibling.
+    Missing or malformed degrades the section to a 'not configured' note rather than
+    breaking the whole report — same contract as _sla_windows.
+    """
+    name = ((cfg.get("control_registry") or {}).get("file")) or "controls.json"
+    try:
+        path = _sibling(name, "DOJO_DASH_CONTROLS")
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(f"_control_registry: unavailable ({exc})\n")
+        return None
+    if not doc.get("controls"):
+        return None
+    return doc
+
+
+def _status_meta(reg):
+    """(ordered status keys, {key: {label, tone}}). Order drives every column."""
+    statuses = reg.get("statuses") or []
+    return [s["key"] for s in statuses], {s["key"]: s for s in statuses}
+
+
+def _status_chip(key, meta, n=None) -> str:
+    s = meta.get(key) or {"label": key, "tone": "muted"}
+    color = TONE_COLOR.get(s.get("tone"), "#888")
+    label = esc(s.get("label", key))
+    return (f'<span class="chip" style="{_swatch_style(color)}">{label}'
+            f'{"" if n is None else f" · {n}"}</span>')
+
+
+def _not_configured(title, desc) -> str:
+    return (f'<section><h2>{esc(title)}</h2>{_desc(desc)}'
+            '<p class="muted">No control registry configured '
+            '(<code>control_registry.file</code> / <code>DOJO_DASH_CONTROLS</code>).</p></section>')
+
+
+def render_control_registry_summary(cfg, title, desc=None) -> str:
+    """Status totals overall, then per requirement group — the 'where do we stand'
+    view an assessor reads first."""
+    reg = _control_registry(cfg)
+    if not reg:
+        return _not_configured(title, desc)
+    keys, meta = _status_meta(reg)
+    controls = reg["controls"]
+    totals = Counter(c["status"] for c in controls)
+
+    cards = "".join(
+        f'<div class="kpi" style="--bar:{TONE_COLOR.get(meta.get(k, {}).get("tone"), "#888")}">'
+        f'<div class="kpi-n">{totals.get(k, 0)}</div>'
+        f'<div class="kpi-l">{esc(meta.get(k, {}).get("label", k))}</div></div>'
+        for k in keys)
+    cards = (f'<div class="kpis"><div class="kpi"><div class="kpi-n">{len(controls)}</div>'
+             f'<div class="kpi-l">Requirements</div></div>{cards}</div>')
+
+    names = {g["id"]: g.get("name", g["id"]) for g in reg.get("groups", [])}
+    head = "".join(f"<th>{esc(meta.get(k, {}).get('label', k))}</th>" for k in keys)
+    rows = []
+    for gid in [g["id"] for g in reg.get("groups", [])]:
+        in_group = [c for c in controls if c.get("group") == gid]
+        if not in_group:
+            continue
+        c_by = Counter(c["status"] for c in in_group)
+        mx = max(c_by.values()) if c_by else 0
+        cells = "".join(
+            f'<td style="{_tone_tint(meta.get(k, {}).get("tone"), c_by.get(k, 0), mx)}">'
+            f'{c_by.get(k, 0)}</td>' for k in keys)
+        rows.append(f'<tr><th class="rh">{esc(gid)} {esc(names.get(gid, ""))}</th>'
+                    f'{cells}<td class="tot">{len(in_group)}</td></tr>')
+    foot = "".join(f'<td class="tot">{totals.get(k, 0)}</td>' for k in keys)
+    table = (f'<div class="tblwrap"><table class="matrix"><thead><tr><th>Group</th>{head}'
+             f'<th>Total</th></tr></thead><tbody>{"".join(rows)}</tbody>'
+             f'<tfoot><tr><th class="rh">Total</th>{foot}'
+             f'<td class="tot">{len(controls)}</td></tr></tfoot></table></div>')
+    return f'<section><h2>{esc(title)}</h2>{_desc(desc)}{cards}{table}</section>'
+
+
+def _tone_tint(tone, n, mx) -> str:
+    if not n:
+        return "background:transparent;color:#5a6878"
+    c = TONE_COLOR.get(tone, "#888")
+    return f"{_swatch_style(c, 0.18 + 0.62 * (n / mx if mx else 1))};font-weight:700"
+
+
+def render_control_registry(cfg, title, desc=None, statuses=None) -> str:
+    """Every requirement, grouped, with its status and evidence pointer.
+
+    `statuses:` in the section config narrows to a subset — e.g. a section showing
+    only the gaps. Omit it for the full map.
+    """
+    reg = _control_registry(cfg)
+    if not reg:
+        return _not_configured(title, desc)
+    keys, meta = _status_meta(reg)
+    wanted = set(statuses) if statuses else None
+    attrs = reg.get("attributes") or []
+    names = {g["id"]: g.get("name", g["id"]) for g in reg.get("groups", [])}
+
+    blocks = []
+    for gid in [g["id"] for g in reg.get("groups", [])]:
+        rows_src = [c for c in reg["controls"] if c.get("group") == gid
+                    and (wanted is None or c["status"] in wanted)]
+        if not rows_src:
+            continue
+        body = []
+        for c in rows_src:
+            # Evidence and notes are one cell: the pointer, then the nuance. Split
+            # across columns they read as unrelated, and the nuance is what carries
+            # an N/A or compensating verdict past a reviewer.
+            detail = " — ".join(
+                x for x in [c.get("attrs", {}).get("evidence"), c.get("notes")] if x)
+            detail = esc(detail) or "—"
+            # An unanswered requirement carries the decision that would close it.
+            # Rendered inline rather than linked out: the person who has to make
+            # the call is reading this page, and a verdict is not something they
+            # can act on — a question with options is.
+            d = c.get("decision") or {}
+            if d.get("question"):
+                opts = "".join(f"<li>{esc(o)}</li>" for o in d.get("options", []))
+                detail += (
+                    f'<div class="decision"><b>Decision needed:</b> {esc(d["question"])}'
+                    + (f"<ul>{opts}</ul>" if opts else "")
+                    + (f'<p class="rec"><b>Recommended:</b> {esc(d["recommendation"])}</p>'
+                       if d.get("recommendation") else "")
+                    + "</div>")
+            cells = "".join(
+                f'<td>{esc(c.get("attrs", {}).get(a["key"], "—"))}</td>'
+                for a in attrs if a["key"] not in ("evidence",))
+            body.append(
+                f'<tr><td><b>{esc(c["id"])}</b></td><td>{esc(c.get("text", ""))}</td>'
+                f'<td>{_status_chip(c["status"], meta)}</td>{cells}'
+                f'<td>{detail}</td></tr>')
+        head = "".join(f'<th>{esc(a["label"])}</th>'
+                       for a in attrs if a["key"] not in ("evidence",))
+        blocks.append(
+            f'<h3>{esc(gid)} — {esc(names.get(gid, gid))} '
+            f'<span class="count">({len(rows_src)})</span></h3>'
+            f'<div class="tblwrap"><table class="list"><thead><tr><th>ID</th>'
+            f'<th>Requirement</th><th>Status</th>{head}<th>Evidence / notes</th>'
+            f'</tr></thead><tbody>{"".join(body)}</tbody></table></div>')
+    if not blocks:
+        return (f'<section><h2>{esc(title)}</h2>{_desc(desc)}'
+                '<p class="muted">Nothing in this status set — good news.</p></section>')
+    fw = reg.get("framework") or {}
+    prov = ""
+    if fw.get("label") or fw.get("source"):
+        prov = ('<p class="muted">'
+                + esc(fw.get("label", ""))
+                + (f' · registry: <code>{esc(fw["source"])}</code>' if fw.get("source") else "")
+                + (f' · {esc(fw["note"])}' if fw.get("note") else "")
+                + "</p>")
+    return f'<section><h2>{esc(title)}</h2>{_desc(desc)}{prov}{"".join(blocks)}</section>'
+
+
 # ---------------------------------------------------------- SOC 2 / CASA evidence
 def _sla_windows():
     """Per-severity SLA windows (days) + enforce flags from config/dojo_sla.yaml.
@@ -873,6 +1055,10 @@ def render_report(report, findings_all, cfg, live_url=None, base=None) -> str:
             parts.append(render_scan_coverage(findings_all, cfg, sec["title"], ctx, desc))
         elif k == "control-map":
             parts.append(render_control_map(findings_all, cfg, sec["title"], ctx, desc))
+        elif k == "control-registry-summary":
+            parts.append(render_control_registry_summary(cfg, sec["title"], desc))
+        elif k == "control-registry":
+            parts.append(render_control_registry(cfg, sec["title"], desc, sec.get("statuses")))
     gen = datetime.now().strftime("%Y-%m-%d %H:%M")
     return page(cfg, title=esc(report["title"]), subtitle=esc(report.get("subtitle", "")),
                 body="\n".join(parts), gen=gen, live=_live_link_html(live_url))
@@ -1020,6 +1206,45 @@ def md_control_map(findings_all, cfg, title) -> str:
             "`docs/SOC2_EVIDENCE.md`.\n")
 
 
+def md_control_registry_summary(cfg, title) -> str:
+    reg = _control_registry(cfg)
+    if not reg:
+        return f"### {title}\n\nNo control registry configured.\n"
+    keys, meta = _status_meta(reg)
+    totals = Counter(c["status"] for c in reg["controls"])
+    labels = [meta.get(k, {}).get("label", k) for k in keys]
+    fw = (reg.get("framework") or {}).get("label", "Controls")
+    return ("\n".join([
+        f"### {title}", "",
+        f"_{_md_esc(fw)} — {len(reg['controls'])} requirements_", "",
+        "| " + " | ".join(labels) + " |",
+        "|" + "---:|" * len(labels),
+        "| " + " | ".join(str(totals.get(k, 0)) for k in keys) + " |",
+    ]) + "\n")
+
+
+def md_control_registry(cfg, title, statuses=None) -> str:
+    """Markdown counterpart. Emits only the rows in `statuses` when given — the job
+    summary wants the gaps, not all 128 rows."""
+    reg = _control_registry(cfg)
+    if not reg:
+        return f"### {title}\n\nNo control registry configured.\n"
+    _keys, meta = _status_meta(reg)
+    wanted = set(statuses) if statuses else None
+    rows = [c for c in reg["controls"] if wanted is None or c["status"] in wanted]
+    if not rows:
+        return f"### {title}\n\nNothing in this status set.\n"
+    out = [f"### {title}", "", "| ID | Requirement | Status | Evidence / notes |",
+           "|---|---|---|---|"]
+    for c in rows:
+        detail = " — ".join(
+            x for x in [c.get("attrs", {}).get("evidence"), c.get("notes")] if x)
+        out.append(f"| {_md_esc(c['id'])} | {_md_esc(c.get('text', ''))} "
+                   f"| {_md_esc(meta.get(c['status'], {}).get('label', c['status']))} "
+                   f"| {_md_esc(detail)} |")
+    return "\n".join(out) + "\n"
+
+
 def _live_link_md(live_url) -> str:
     if not live_url:
         return ""
@@ -1054,6 +1279,10 @@ def render_report_md(report, findings_all, cfg, live_url=None) -> str:
             parts.append(md_scan_coverage(findings_all, cfg, sec["title"]))
         elif k == "control-map":
             parts.append(md_control_map(findings_all, cfg, sec["title"]))
+        elif k == "control-registry-summary":
+            parts.append(md_control_registry_summary(cfg, sec["title"]))
+        elif k == "control-registry":
+            parts.append(md_control_registry(cfg, sec["title"], sec.get("statuses")))
     return "\n".join(parts)
 
 
@@ -1109,6 +1338,10 @@ border-radius:12px;overflow:hidden}}
 .list .num{{text-align:right;white-space:nowrap}}
 .list .dt{{white-space:nowrap;font-variant-numeric:tabular-nums;font-size:12px;color:var(--mut)}}
 .list .dt.none{{color:#3d4a5c}}
+.decision{{margin-top:8px;padding:9px 11px;border-left:2px solid var(--accent);
+background:var(--panel2);border-radius:0 7px 7px 0}}
+.decision ul{{margin:6px 0 0;padding-left:18px}}.decision li{{margin:3px 0}}
+.decision .rec{{margin:8px 0 0;color:#cfd9e4}}
 .list th.srt{{cursor:pointer}}.list th.srt a{{color:inherit;text-decoration:none;display:block;white-space:nowrap}}
 .list th.srt a:hover{{color:var(--accent)}}.list th.srt.on a{{color:var(--ink)}}
 .list .grand td{{font-weight:800;border-top:2px solid var(--line);background:var(--panel2)}}
