@@ -1,17 +1,26 @@
-"""Tests for the control-registry sections (the CASA / ASVS evidence view).
+"""Unit tests for the control-registry sections (the compliance evidence view).
 
-The property under test that matters most is DETERMINISM: these sections must render
-from the checked-in registry alone, with no DefectDojo data reaching them. A
-compliance assessor is handed a link to a specific claim about the codebase, and a
-number that moves between submission and review is worse than no number. So the
-tests below pass deliberately hostile finding data (a live Critical) and assert it
-changes nothing.
+The property that matters most is DETERMINISM: these sections must render from the
+checked-in registry alone, with no DefectDojo data reaching them. A compliance
+assessor is handed a link to a specific claim about the codebase, and a number that
+moves between submission and review is worse than no number. So the tests below pass
+deliberately hostile finding data (a live Critical) and assert it changes nothing.
+
+Pure stdlib (unittest), matching tests/test_alerts.py — CI installs only the package
+(`pip install .[mongodb]`) and runs `python -m unittest discover -s tests`, so a test
+dependency here would not be available.
+
+    python -m unittest tests.test_control_registry     # from the repo root
 """
 import json
+import os
+import sys
+import tempfile
+import unittest
 
-import pytest
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dojo_dash import render as R
+from dojo_dash import render as R  # noqa: E402
 
 REGISTRY = {
     "framework": {"label": "ASVS 4.0.3 Level 1", "source": "config/asvs_map.yaml"},
@@ -44,40 +53,6 @@ REGISTRY = {
 
 CFG = {"control_registry": {"file": "controls.json"}}
 
-
-@pytest.fixture
-def registry(tmp_path, monkeypatch):
-    path = tmp_path / "controls.json"
-    path.write_text(json.dumps(REGISTRY), encoding="utf-8")
-    monkeypatch.setenv("DOJO_DASH_CONTROLS", str(path))
-    return path
-
-
-def test_summary_counts_every_status(registry):
-    html = R.render_control_registry_summary(CFG, "Where we stand")
-    # 3 requirements: 1 met, 1 not-met, 1 todo — and the total card.
-    assert ">3</div><div class=\"kpi-l\">Requirements" in html
-    for label in ("Met", "NOT MET", "TODO"):
-        assert label in html
-    # Per-group rows exist for both chapters.
-    assert "Authentication" in html and "Session" in html
-
-
-def test_full_map_lists_every_control_with_its_evidence(registry):
-    html = R.render_control_registry(CFG, "Full map")
-    for cid in ("V2.1.1", "V2.2.1", "V3.1.1"):
-        assert cid in html
-    # Evidence and notes are merged into one cell, so both must survive.
-    assert "policy.py:44" in html
-    assert "No throttle yet." in html
-
-
-def test_statuses_filter_narrows_to_the_gaps(registry):
-    html = R.render_control_registry(CFG, "Open items", statuses=["not-met", "todo"])
-    assert "V2.2.1" in html and "V3.1.1" in html
-    assert "V2.1.1" not in html, "a met requirement leaked into the gaps section"
-
-
 HOSTILE = [
     {"severity": "Critical", "product": "app", "engagement": "CI", "title": "boom",
      "age_days": 900, "finding_id": 1, "active": True, "duplicate": False,
@@ -86,61 +61,121 @@ HOSTILE = [
 ]
 
 
-def _render_both(sections):
-    """Same report with no findings vs. a live Critical, minus the time stamp."""
-    report = {"title": "CASA", "sections": sections}
-    cfg = {**CFG, "severities": ["Critical"]}
-    def strip(s):
-        return "\n".join(line for line in s.splitlines() if "Generated" not in line)
-    return (strip(R.render_report(report, [], cfg)),
-            strip(R.render_report(report, HOSTILE, cfg)))
+class RegistryTestCase(unittest.TestCase):
+    """Writes the registry to a temp file and points DOJO_DASH_CONTROLS at it."""
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        path = os.path.join(self._dir.name, "controls.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(REGISTRY, fh)
+        self._prev = os.environ.get("DOJO_DASH_CONTROLS")
+        os.environ["DOJO_DASH_CONTROLS"] = path
+
+    def tearDown(self):
+        if self._prev is None:
+            os.environ.pop("DOJO_DASH_CONTROLS", None)
+        else:
+            os.environ["DOJO_DASH_CONTROLS"] = self._prev
+        self._dir.cleanup()
+
+    @staticmethod
+    def render_both(sections):
+        """Same report with no findings vs. a live Critical, minus the time stamp."""
+        report = {"title": "Evidence", "sections": sections}
+        cfg = dict(CFG, severities=["Critical"])
+
+        def strip(s):
+            return "\n".join(ln for ln in s.splitlines() if "Generated" not in ln)
+
+        return (strip(R.render_report(report, [], cfg)),
+                strip(R.render_report(report, HOSTILE, cfg)))
 
 
-def test_render_is_independent_of_finding_data(registry):
-    """The whole point: Dojo findings must not move a single number here."""
-    empty, hostile = _render_both([
-        {"kind": "control-registry-summary", "title": "Where we stand"},
-        {"kind": "control-registry", "title": "Full map"},
-    ])
-    assert empty == hostile
+class SummaryTests(RegistryTestCase):
+    def test_counts_every_status(self):
+        html = R.render_control_registry_summary(CFG, "Where we stand")
+        self.assertIn('>3</div><div class="kpi-l">Requirements', html)
+        for label in ("Met", "NOT MET", "TODO"):
+            self.assertIn(label, html)
+        self.assertIn("Authentication", html)
+        self.assertIn("Session", html)
 
 
-def test_the_determinism_check_can_actually_fail():
-    """Guard on the guard above.
+class FullMapTests(RegistryTestCase):
+    def test_lists_every_control_with_its_evidence(self):
+        html = R.render_control_registry(CFG, "Full map")
+        for cid in ("V2.1.1", "V2.2.1", "V3.1.1"):
+            self.assertIn(cid, html)
+        # Evidence and notes are merged into one cell, so both must survive.
+        self.assertIn("policy.py:44", html)
+        self.assertIn("No throttle yet.", html)
 
-    A comparison that can never differ would pass whatever the registry sections
-    did, so pin the harness against a section that IS finding-derived (`kpis`). If
-    this stops failing, the test above has quietly stopped proving anything.
-    """
-    empty, hostile = _render_both([{"kind": "kpis", "title": "At a glance"}])
-    assert empty != hostile
-
-
-def test_open_decisions_render_inline_and_are_escaped(registry):
-    """The person who has to make the call reads this page, so the question, the
-    options and the recommendation all render in place — and, since the registry is
-    a file a human edits, its text is escaped rather than trusted as HTML."""
-    html = R.render_control_registry(CFG, "Open items", statuses=["todo"])
-    assert "Decision needed:" in html
-    assert "Wait for the audit" in html
-    assert "Ship now — it is a one-line change." in html
-    assert "<b>now</b>" not in html, "registry text was interpolated as raw HTML"
-    assert "&lt;b&gt;now&lt;/b&gt;" in html
+    def test_statuses_filter_narrows_to_the_gaps(self):
+        html = R.render_control_registry(CFG, "Open", statuses=["not-met", "todo"])
+        self.assertIn("V2.2.1", html)
+        self.assertIn("V3.1.1", html)
+        self.assertNotIn("V2.1.1", html)
 
 
-def test_controls_without_a_decision_render_no_decision_block(registry):
-    html = R.render_control_registry(CFG, "Met only", statuses=["met"])
-    assert "Decision needed:" not in html
+class DecisionTests(RegistryTestCase):
+    def test_open_decisions_render_inline_and_are_escaped(self):
+        """The person who has to make the call reads this page, so the question,
+        options and recommendation all render in place — and since the registry is a
+        file a human edits, its text is escaped rather than trusted as HTML."""
+        html = R.render_control_registry(CFG, "Open items", statuses=["todo"])
+        self.assertIn("Decision needed:", html)
+        self.assertIn("Wait for the audit", html)
+        self.assertIn("Ship now — it is a one-line change.", html)
+        self.assertNotIn("<b>now</b>", html)
+        self.assertIn("&lt;b&gt;now&lt;/b&gt;", html)
+
+    def test_controls_without_a_decision_render_no_decision_block(self):
+        html = R.render_control_registry(CFG, "Met only", statuses=["met"])
+        self.assertNotIn("Decision needed:", html)
 
 
-def test_missing_registry_degrades_instead_of_raising(monkeypatch):
-    monkeypatch.setenv("DOJO_DASH_CONTROLS", "/nonexistent/controls.json")
-    for html in (R.render_control_registry_summary(CFG, "T"),
-                 R.render_control_registry(CFG, "T")):
-        assert "No control registry configured" in html
+class DeterminismTests(RegistryTestCase):
+    def test_render_is_independent_of_finding_data(self):
+        """The whole point: Dojo findings must not move a single number here."""
+        empty, hostile = self.render_both([
+            {"kind": "control-registry-summary", "title": "Where we stand"},
+            {"kind": "control-registry", "title": "Full map"},
+        ])
+        self.assertEqual(empty, hostile)
+
+    def test_the_determinism_check_can_actually_fail(self):
+        """Guard on the guard above.
+
+        A comparison that can never differ would pass whatever the registry sections
+        did, so pin the harness against a section that IS finding-derived (`kpis`).
+        If this stops failing, the test above has quietly stopped proving anything.
+        """
+        empty, hostile = self.render_both([{"kind": "kpis", "title": "At a glance"}])
+        self.assertNotEqual(empty, hostile)
 
 
-def test_markdown_gap_summary_only_emits_the_requested_statuses(registry):
-    md = R.md_control_registry(CFG, "Open items", statuses=["not-met"])
-    assert "V2.2.1" in md
-    assert "V2.1.1" not in md
+class DegradationTests(unittest.TestCase):
+    def test_missing_registry_degrades_instead_of_raising(self):
+        prev = os.environ.get("DOJO_DASH_CONTROLS")
+        os.environ["DOJO_DASH_CONTROLS"] = "/nonexistent/controls.json"
+        try:
+            for html in (R.render_control_registry_summary(CFG, "T"),
+                         R.render_control_registry(CFG, "T")):
+                self.assertIn("No control registry configured", html)
+        finally:
+            if prev is None:
+                os.environ.pop("DOJO_DASH_CONTROLS", None)
+            else:
+                os.environ["DOJO_DASH_CONTROLS"] = prev
+
+
+class MarkdownTests(RegistryTestCase):
+    def test_gap_summary_only_emits_the_requested_statuses(self):
+        md = R.md_control_registry(CFG, "Open items", statuses=["not-met"])
+        self.assertIn("V2.2.1", md)
+        self.assertNotIn("V2.1.1", md)
+
+
+if __name__ == "__main__":
+    unittest.main()
