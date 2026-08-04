@@ -654,13 +654,18 @@ def render_control_registry_summary(cfg, title, desc=None) -> str:
     controls = reg["controls"]
     totals = Counter(c["status"] for c in controls)
 
+    # Cards and matrix cells are in-page controls, not links out: this report has
+    # no findings browser behind it, so a click filters the map below and scrolls
+    # to it. `data-cr-*` is read by the shared script in PAGE.
     cards = "".join(
-        f'<div class="kpi" style="--bar:{TONE_COLOR.get(meta.get(k, {}).get("tone"), "#888")}">'
+        f'<a class="kpi" href="#cr-map" data-cr-status="{esc(k)}" '
+        f'style="--bar:{TONE_COLOR.get(meta.get(k, {}).get("tone"), "#888")}">'
         f'<div class="kpi-n">{totals.get(k, 0)}</div>'
-        f'<div class="kpi-l">{esc(meta.get(k, {}).get("label", k))}</div></div>'
+        f'<div class="kpi-l">{esc(meta.get(k, {}).get("label", k))}</div></a>'
         for k in keys)
-    cards = (f'<div class="kpis"><div class="kpi"><div class="kpi-n">{len(controls)}</div>'
-             f'<div class="kpi-l">Requirements</div></div>{cards}</div>')
+    cards = (f'<div class="kpis"><a class="kpi" href="#cr-map" data-cr-status="">'
+             f'<div class="kpi-n">{len(controls)}</div>'
+             f'<div class="kpi-l">Requirements</div></a>{cards}</div>')
 
     names = {g["id"]: g.get("name", g["id"]) for g in reg.get("groups", [])}
     head = "".join(f"<th>{esc(meta.get(k, {}).get('label', k))}</th>" for k in keys)
@@ -673,9 +678,17 @@ def render_control_registry_summary(cfg, title, desc=None) -> str:
         mx = max(c_by.values()) if c_by else 0
         cells = "".join(
             f'<td style="{_tone_tint(meta.get(k, {}).get("tone"), c_by.get(k, 0), mx)}">'
-            f'{c_by.get(k, 0)}</td>' for k in keys)
-        rows.append(f'<tr><th class="rh">{esc(gid)} {esc(names.get(gid, ""))}</th>'
-                    f'{cells}<td class="tot">{len(in_group)}</td></tr>')
+            + (f'<a class="cr-cell" href="#cr-map" data-cr-group="{esc(gid)}" '
+               f'data-cr-status="{esc(k)}">{c_by.get(k, 0)}</a>'
+               if c_by.get(k, 0) else '0')
+            + '</td>' for k in keys)
+        rows.append(
+            f'<tr><th class="rh">'
+            f'<a class="cr-cell" href="#cr-map" data-cr-group="{esc(gid)}" data-cr-status="">'
+            f'{esc(gid)} {esc(names.get(gid, ""))}</a></th>'
+            f'{cells}'
+            f'<td class="tot"><a class="cr-cell" href="#cr-map" data-cr-group="{esc(gid)}" '
+            f'data-cr-status="">{len(in_group)}</a></td></tr>')
     foot = "".join(f'<td class="tot">{totals.get(k, 0)}</td>' for k in keys)
     table = (f'<div class="tblwrap"><table class="matrix"><thead><tr><th>Group</th>{head}'
              f'<th>Total</th></tr></thead><tbody>{"".join(rows)}</tbody>'
@@ -691,7 +704,8 @@ def _tone_tint(tone, n, mx) -> str:
     return f"{_swatch_style(c, 0.18 + 0.62 * (n / mx if mx else 1))};font-weight:700"
 
 
-def render_control_registry(cfg, title, desc=None, statuses=None) -> str:
+def render_control_registry(cfg, title, desc=None, statuses=None,
+                            sec_tabs=False, sec_id="cr-map") -> str:
     """Every requirement, grouped, with its status and evidence pointer.
 
     `statuses:` in the section config narrows to a subset — e.g. a section showing
@@ -705,7 +719,7 @@ def render_control_registry(cfg, title, desc=None, statuses=None) -> str:
     attrs = reg.get("attributes") or []
     names = {g["id"]: g.get("name", g["id"]) for g in reg.get("groups", [])}
 
-    blocks = []
+    blocks, group_tabs = [], []
     for gid in [g["id"] for g in reg.get("groups", [])]:
         rows_src = [c for c in reg["controls"] if c.get("group") == gid
                     and (wanted is None or c["status"] in wanted)]
@@ -736,17 +750,20 @@ def render_control_registry(cfg, title, desc=None, statuses=None) -> str:
                 f'<td>{esc(c.get("attrs", {}).get(a["key"], "—"))}</td>'
                 for a in attrs if a["key"] not in ("evidence",))
             body.append(
-                f'<tr><td><b>{esc(c["id"])}</b></td><td>{esc(c.get("text", ""))}</td>'
+                f'<tr data-cr-status="{esc(c["status"])}">'
+                f'<td><b>{esc(c["id"])}</b></td><td>{esc(c.get("text", ""))}</td>'
                 f'<td>{_status_chip(c["status"], meta)}</td>{cells}'
                 f'<td>{detail}</td></tr>')
         head = "".join(f'<th>{esc(a["label"])}</th>'
                        for a in attrs if a["key"] not in ("evidence",))
         blocks.append(
+            f'<div class="cr-group" data-cr-group="{esc(gid)}">'
             f'<h3>{esc(gid)} — {esc(names.get(gid, gid))} '
             f'<span class="count">({len(rows_src)})</span></h3>'
             f'<div class="tblwrap"><table class="list"><thead><tr><th>ID</th>'
             f'<th>Requirement</th><th>Status</th>{head}<th>Evidence / notes</th>'
-            f'</tr></thead><tbody>{"".join(body)}</tbody></table></div>')
+            f'</tr></thead><tbody>{"".join(body)}</tbody></table></div></div>')
+        group_tabs.append((gid, names.get(gid, gid), len(rows_src)))
     if not blocks:
         return (f'<section><h2>{esc(title)}</h2>{_desc(desc)}'
                 '<p class="muted">Nothing in this status set — good news.</p></section>')
@@ -758,7 +775,22 @@ def render_control_registry(cfg, title, desc=None, statuses=None) -> str:
                 + (f' · registry: <code>{esc(fw["source"])}</code>' if fw.get("source") else "")
                 + (f' · {esc(fw["note"])}' if fw.get("note") else "")
                 + "</p>")
-    return f'<section><h2>{esc(title)}</h2>{_desc(desc)}{prov}{"".join(blocks)}</section>'
+    # A tab strip when there is more than one group. 128 requirements across 13
+    # chapters is a long scroll; tabs make "show me V5" one click instead of a
+    # hunt. `tabs: false` in the section config opts out (the Open-items section
+    # is short enough to read whole).
+    strip = ""
+    if sec_tabs and len(group_tabs) > 1:
+        btns = "".join(
+            f'<button class="cr-tab" data-cr-group="{esc(g)}">{esc(g)} '
+            f'<span class="count">{n}</span></button>' for g, _nm, n in group_tabs)
+        strip = (f'<div class="cr-tabs"><button class="cr-tab on" data-cr-group="">All '
+                 f'<span class="count">{sum(n for _g, _nm, n in group_tabs)}</span>'
+                 f'</button>{btns}</div>')
+    empty = ('<p class="muted cr-empty" hidden>Nothing matches that filter — '
+             '<a href="#" data-cr-status="" data-cr-group="">show everything</a>.</p>')
+    return (f'<section id="{esc(sec_id)}"><h2>{esc(title)}</h2>{_desc(desc)}{prov}'
+            f'{strip}{empty}{"".join(blocks)}</section>')
 
 
 # ---------------------------------------------------------- SOC 2 / CASA evidence
@@ -1058,7 +1090,17 @@ def render_report(report, findings_all, cfg, live_url=None, base=None) -> str:
         elif k == "control-registry-summary":
             parts.append(render_control_registry_summary(cfg, sec["title"], desc))
         elif k == "control-registry":
-            parts.append(render_control_registry(cfg, sec["title"], desc, sec.get("statuses")))
+            # `cr-map` is the anchor the summary's KPI cards and matrix cells
+            # scroll to, and the element the filter script binds to — so exactly
+            # ONE section may own it. The tabbed section (the full map) does;
+            # any other control-registry section gets a distinct id. Both
+            # defaulting to `cr-map` produced duplicate ids and bound the filter
+            # to whichever came first, which was the wrong section.
+            _cr_n = sum(1 for x in parts if 'id="cr-map' in x)
+            _id = sec.get("id") or ("cr-map" if sec.get("tabs") else f"cr-map-{_cr_n}")
+            parts.append(render_control_registry(
+                cfg, sec["title"], desc, sec.get("statuses"),
+                sec_tabs=bool(sec.get("tabs")), sec_id=_id))
     gen = datetime.now().strftime("%Y-%m-%d %H:%M")
     return page(cfg, title=esc(report["title"]), subtitle=esc(report.get("subtitle", "")),
                 body="\n".join(parts), gen=gen, live=_live_link_html(live_url))
@@ -1342,6 +1384,17 @@ border-radius:12px;overflow:hidden}}
 background:var(--panel2);border-radius:0 7px 7px 0}}
 .decision ul{{margin:6px 0 0;padding-left:18px}}.decision li{{margin:3px 0}}
 .decision .rec{{margin:8px 0 0;color:#cfd9e4}}
+.cr-tabs{{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 16px}}
+.cr-tab{{background:var(--panel);border:1px solid var(--line);color:var(--mut);
+border-radius:8px;padding:5px 11px;font:inherit;font-size:12px;cursor:pointer;
+transition:border-color .12s,color .12s,background .12s}}
+.cr-tab:hover{{border-color:var(--accent);color:var(--ink)}}
+.cr-tab.on{{background:#12303a;border-color:var(--accent);color:var(--ink);font-weight:600}}
+.cr-tab .count{{color:var(--mut);margin-left:4px;font-variant-numeric:tabular-nums}}
+a.cr-cell{{color:inherit;text-decoration:none;display:block}}
+a.cr-cell:hover{{color:var(--accent)}}
+.kpi.on{{border-color:var(--accent);background:#12303a}}
+.cr-empty{{margin:0 0 14px}}
 .list th.srt{{cursor:pointer}}.list th.srt a{{color:inherit;text-decoration:none;display:block;white-space:nowrap}}
 .list th.srt a:hover{{color:var(--accent)}}.list th.srt.on a{{color:var(--ink)}}
 .list .grand td{{font-weight:800;border-top:2px solid var(--line);background:var(--panel2)}}
@@ -1461,6 +1514,46 @@ font-size:13px;font-weight:600}}
   document.addEventListener('mouseout',function(e){{
     if(e.target.closest&&e.target.closest('[data-tip]'))t.style.opacity='0';
   }});
+
+  // Control-registry filtering (compliance report). Inert on every other page:
+  // it only binds when [data-cr-group]/[data-cr-status] elements exist, and all
+  // state lives in the DOM. Filtering is client-side because the whole registry
+  // is already in the page — there is no API to go back to.
+  // Scoped to the #cr-map section on purpose. The Open-items section renders
+  // .cr-group blocks too, and an unscoped filter made a chapter tab in the full
+  // map silently hide rows in Open items as well.
+  var root=document.getElementById('cr-map');
+  if(root){{
+    var st='',gp='';
+    function apply(){{
+      var shown=0;
+      root.querySelectorAll('.cr-group').forEach(function(g){{
+        var gm=(!gp||g.getAttribute('data-cr-group')===gp),vis=0;
+        g.querySelectorAll('tbody tr').forEach(function(r){{
+          var rm=gm&&(!st||r.getAttribute('data-cr-status')===st);
+          r.hidden=!rm; if(rm)vis++;
+        }});
+        g.hidden=!(gm&&vis>0); shown+=vis;
+      }});
+      root.querySelectorAll('.cr-empty').forEach(function(e){{e.hidden=shown>0;}});
+      root.querySelectorAll('.cr-tab').forEach(function(b){{
+        b.classList.toggle('on',(b.getAttribute('data-cr-group')||'')===gp);
+      }});
+      document.querySelectorAll('[data-cr-status].kpi').forEach(function(k){{
+        k.classList.toggle('on',(k.getAttribute('data-cr-status')||'')===st);
+      }});
+    }}
+    document.addEventListener('click',function(e){{
+      var el=e.target.closest?e.target.closest('[data-cr-group],[data-cr-status]'):null;
+      if(!el)return;
+      if(el.hasAttribute('data-cr-group'))gp=el.getAttribute('data-cr-group')||'';
+      if(el.hasAttribute('data-cr-status'))st=el.getAttribute('data-cr-status')||'';
+      apply();
+      var tgt=document.getElementById('cr-map');
+      if(tgt&&el.tagName!=='BUTTON'){{e.preventDefault();tgt.scrollIntoView({{behavior:'smooth'}});}}
+      else if(el.tagName==='BUTTON')e.preventDefault();
+    }});
+  }}
 }})();
 </script>
 </body></html>"""

@@ -179,3 +179,61 @@ class MarkdownTests(RegistryTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ------------------------------------------------------- CASA page navigation
+
+def _multi_section_report():
+    return {"title": "CASA", "sections": [
+        {"kind": "control-registry-summary", "title": "Where we stand"},
+        {"kind": "control-registry", "title": "Open items", "statuses": ["not-met", "todo"]},
+        {"kind": "control-registry", "title": "Full map", "tabs": True},
+    ]}
+
+
+class NavigationTests(RegistryTestCase):
+    def test_summary_cards_and_cells_link_into_the_map(self):
+        html = R.render_control_registry_summary(CFG, "Where we stand")
+        assert 'href="#cr-map"' in html, "KPI cards must deep-link into the map"
+        assert 'data-cr-status="met"' in html
+        assert 'class="cr-cell"' in html, "matrix counts must be clickable"
+        assert 'data-cr-group="V2"' in html
+
+    def test_tabs_only_where_asked(self):
+        with_tabs = R.render_control_registry(CFG, "Full map", sec_tabs=True)
+        without = R.render_control_registry(CFG, "Open items", sec_tabs=False)
+        assert 'class="cr-tab"' in with_tabs, "tabs: true must render a tab strip"
+        assert 'class="cr-tab"' not in without, (
+            "a short section must not get a tab strip it does not need")
+
+    def test_rows_and_groups_carry_filter_hooks(self):
+        html = R.render_control_registry(CFG, "Full map", sec_tabs=True)
+        assert 'class="cr-group" data-cr-group="V2"' in html
+        assert 'data-cr-status="met"' in html
+
+    def test_only_one_section_owns_the_cr_map_anchor(self):
+        """Both control-registry sections defaulting to id="cr-map" produced
+        duplicate ids, and the filter script bound to whichever came first —
+        which was the wrong section."""
+        import re
+        page = R.render_report(_multi_section_report(), [],
+                               {**CFG, "severities": ["Critical"]})
+        ids = re.findall(r'<section id="([^"]+)"', page)
+        assert len(ids) == len(set(ids)), f"duplicate section ids: {ids}"
+        assert ids.count("cr-map") == 1, f"exactly one cr-map expected, got {ids}"
+
+    def test_the_tabbed_section_is_the_one_that_owns_cr_map(self):
+        """The summary links to #cr-map, so the anchor must land on the full map
+        rather than on Open items."""
+        page = R.render_report(_multi_section_report(), [],
+                               {**CFG, "severities": ["Critical"]})
+        i = page.index('<section id="cr-map"')
+        assert 'class="cr-tab"' in page[i:], "cr-map must be the tabbed section"
+        assert 'class="cr-tab"' not in page[:i], "no tabs before the map section"
+
+    def test_filter_script_is_scoped_to_the_map(self):
+        """An unscoped filter made a chapter tab hide rows in Open items too."""
+        page = R.render_report(_multi_section_report(), [],
+                               {**CFG, "severities": ["Critical"]})
+        assert "root.querySelectorAll('.cr-group')" in page
+        assert "document.querySelectorAll('.cr-group')" not in page

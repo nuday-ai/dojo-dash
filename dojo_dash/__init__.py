@@ -13,4 +13,4 @@ must not drift under an assessor between submission and review. See the README a
 docs/ for configuration and deployment.
 """
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
