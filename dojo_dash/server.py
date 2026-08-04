@@ -178,14 +178,14 @@ def _nav_tabs(cfg: dict, current, counts=None) -> str:
                 esc(r.get("nav_label") or r.get("title") or r["name"]),
                 r.get("name") == current)
             for r in cfg.get("reports", [])]
-    pill, hint = "", ""
+    # Rendered as plain text, exactly like the report tabs — no count pill and no
+    # icon. The count is still carried in the tooltip, so the information survives
+    # without the tab advertising a number the other tabs don't have.
+    hint = ""
     if counts:
         open_n, total_n = counts
-        pill = f'<span class="tab-n">{open_n:,}</span>'
         hint = f"{open_n:,} open of {total_n:,} findings — other dispositions via the filter"
-    tabs.append(tab("/report/findings?disposition=Open",
-                    '<span class="tab-ico" aria-hidden="true">&#128269;</span>'
-                    f'Open findings{pill}',
+    tabs.append(tab("/report/findings?disposition=Open", "Open findings",
                     current == "findings", hint))
     return ('<nav class="navbar" aria-label="Reports"><div class="nav-tabs">'
             + "".join(tabs) + "</div></nav>")

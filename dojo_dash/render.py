@@ -1435,11 +1435,9 @@ font-size:13.5px;padding:11px 16px;color:var(--mut);white-space:nowrap;border-ra
 border-bottom:2px solid transparent;transition:color .12s,background .12s,border-color .12s}}
 .nav-tab:hover{{color:var(--ink);background:var(--panel2)}}
 .nav-tab.on{{color:var(--ink);border-bottom-color:var(--accent)}}
-.nav-tab .tab-ico{{font-size:13px;line-height:1;opacity:.75}}
-/* count pill on the findings tab — how many findings the browser would list unfiltered */
-.nav-tab .tab-n{{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--mut);
-background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:1px 8px}}
-.nav-tab.on .tab-n{{color:var(--ink);border-color:var(--mut)}}
+/* No .tab-ico / .tab-n rules: every nav tab is plain text. The findings tab used to
+   carry a magnifier icon and an open-count pill; both were removed so it matches the
+   report tabs. Its count now lives in the tab's tooltip (server.py::_nav). */
 /* header top-right action cluster (force-refresh + return to DefectDojo), sitting above
    the freshness stamp so every "state of the data" affordance lives in one corner */
 .hdr-actions{{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}}
