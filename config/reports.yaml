@@ -1,21 +1,3 @@
-# Smoke-test config for the offline render in .github/workflows/ci.yml.
-#
-# WHY IT LIVES IN fixtures/ AND NOT config/: commit 97399cf removed
-# config/reports.yaml, dojo_sla.yaml and suppressions.yaml from this repo —
-# deployment config belongs to whoever runs dojo-dash (for NuDay that is
-# nuday-security-audit), not to the tool. But the CI step
-# `dojo-dash render --config config/reports.yaml --findings-json
-# fixtures/findings.json` still pointed at the deleted file, so CI has been red
-# since that commit (run 30892000455).
-#
-# Restoring it under config/ would re-create exactly what was deliberately
-# removed, and it would likely be deleted again. It is TEST INPUT, so it lives
-# beside fixtures/findings.json, which it is rendered against.
-#
-# Already generic — the content below is unchanged from the deleted file, which
-# contained no organisation-specific values ("Demo Platform", "your-org",
-# example repo names). That matters because the smoke test asserts the rendered
-# posture report contains no private identifiers.
 # dojo-dash configuration — everything the dashboard shows is declared here.
 #
 # This is the SAMPLE config: it renders the bundled demo (a "Demo Platform" product

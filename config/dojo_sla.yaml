@@ -1,7 +1,3 @@
-# Smoke-test SLA windows. Sibling of fixtures/reports.yaml — the renderer
-# resolves this relative to the config file's directory, so no CI flag is
-# needed. Without it the evidence report's SLA section renders "not
-# configured" and the smoke test covers less. Generic, as deleted in 97399cf.
 # Optional: per-severity SLA windows (in days) for the evidence report's SLA-compliance
 # table. Overridable path via $DOJO_DASH_SLA. Delete this file and the SLA section simply
 # renders "not configured" — nothing else breaks.

@@ -21,7 +21,7 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Offline render smoke test (no DefectDojo needed)
         run: |
-          dojo-dash render --config fixtures/reports.yaml \
+          dojo-dash render --config config/reports.yaml \
             --findings-json fixtures/findings.json --format both --out-dir out
           test -s out/posture.html
           test -s out/evidence.html
