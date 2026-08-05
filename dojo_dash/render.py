@@ -737,6 +737,21 @@ def render_control_registry(cfg, title, desc=None, statuses=None,
             # Rendered inline rather than linked out: the person who has to make
             # the call is reading this page, and a verdict is not something they
             # can act on — a question with options is.
+            # Every non-met row says what happens about it: a deliberate
+            # deviation with no action pending, or a link straight to the steps
+            # that close it. Without this a reader sees "compensating" and has
+            # no way to tell those two apart — which is the question they
+            # actually have.
+            disp = c.get("disposition") or {}
+            if disp.get("label"):
+                if disp.get("url"):
+                    detail += (
+                        f'<div class="disp"><b>Next step:</b> '
+                        f'<a href="{esc(disp["url"])}" target="_blank" rel="noopener">'
+                        f'{esc(disp["label"])}</a></div>')
+                else:
+                    detail += (f'<div class="disp muted"><b>Disposition:</b> '
+                               f'{esc(disp["label"])}</div>')
             d = c.get("decision") or {}
             if d.get("question"):
                 opts = "".join(f"<li>{esc(o)}</li>" for o in d.get("options", []))
@@ -1281,6 +1296,10 @@ def md_control_registry(cfg, title, statuses=None) -> str:
     for c in rows:
         detail = " — ".join(
             x for x in [c.get("attrs", {}).get("evidence"), c.get("notes")] if x)
+        disp = c.get("disposition") or {}
+        if disp.get("label"):
+            detail += (f" — NEXT STEP: [{disp['label']}]({disp['url']})"
+                       if disp.get("url") else f" — DISPOSITION: {disp['label']}")
         out.append(f"| {_md_esc(c['id'])} | {_md_esc(c.get('text', ''))} "
                    f"| {_md_esc(meta.get(c['status'], {}).get('label', c['status']))} "
                    f"| {_md_esc(detail)} |")
@@ -1382,6 +1401,7 @@ border-radius:12px;overflow:hidden}}
 .list .dt.none{{color:#3d4a5c}}
 .decision{{margin-top:8px;padding:9px 11px;border-left:2px solid var(--accent);
 background:var(--panel2);border-radius:0 7px 7px 0}}
+.disp{{margin-top:8px;padding:7px 10px;border-left:2px solid var(--accent);background:rgba(255,255,255,.03);border-radius:0 4px 4px 0;font-size:.93em}}.disp.muted{{border-left-color:#556;color:#aab4bf}}.disp a{{color:var(--accent)}}
 .decision ul{{margin:6px 0 0;padding-left:18px}}.decision li{{margin:3px 0}}
 .decision .rec{{margin:8px 0 0;color:#cfd9e4}}
 .cr-tabs{{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 16px}}

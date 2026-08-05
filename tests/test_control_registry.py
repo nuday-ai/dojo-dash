@@ -40,9 +40,14 @@ REGISTRY = {
          "status": "met", "attrs": {"how": "code-review", "evidence": "policy.py:44",
                                     "owner": "app"}},
         {"id": "V2.2.1", "group": "V2", "text": "Anti-automation on login.",
-         "status": "not-met", "attrs": {"owner": "app"}, "notes": "No throttle yet."},
+         "status": "not-met", "attrs": {"owner": "app"}, "notes": "No throttle yet.",
+         "disposition": {"key": "deliberate",
+                         "label": "Deliberate deviation — no action pending"}},
         {"id": "V3.1.1", "group": "V3", "text": "No session tokens in the URL.",
          "status": "todo", "attrs": {"owner": "security"},
+         "disposition": {"key": "go-live",
+                         "label": "Fixable — steps in GO_LIVE_SWITCHES.md",
+                         "url": "https://example.test/GO_LIVE_SWITCHES.md#3-admin-mfa--enforce"},
          "decision": {
              "question": "Ship <b>now</b> or wait?",
              "options": ["Ship now", "Wait for the audit"],
@@ -133,6 +138,40 @@ class DecisionTests(RegistryTestCase):
     def test_controls_without_a_decision_render_no_decision_block(self):
         html = R.render_control_registry(CFG, "Met only", statuses=["met"])
         self.assertNotIn("Decision needed:", html)
+
+
+class DispositionTests(RegistryTestCase):
+    """Every non-met row must say what happens about it.
+
+    Without this a reader sees "compensating" and cannot tell a deliberate
+    architectural deviation from something nobody has got to yet — which is the
+    question they actually have. A fixable row links straight to its steps.
+    """
+
+    def test_a_fixable_row_links_to_its_steps(self):
+        html = R.render_control_registry(CFG, "Open", statuses=["todo"])
+        self.assertIn("Next step:", html)
+        self.assertIn("GO_LIVE_SWITCHES.md#3-admin-mfa--enforce", html)
+        self.assertIn('target="_blank"', html)
+        self.assertIn('rel="noopener"', html)
+
+    def test_a_deliberate_row_states_it_and_offers_no_link(self):
+        html = R.render_control_registry(CFG, "Open", statuses=["not-met"])
+        self.assertIn("Disposition:", html)
+        self.assertIn("Deliberate deviation", html)
+        self.assertNotIn("Next step:", html)
+
+    def test_a_met_row_carries_no_disposition_block(self):
+        html = R.render_control_registry(CFG, "Met", statuses=["met"])
+        self.assertNotIn("Next step:", html)
+        self.assertNotIn("Disposition:", html)
+
+    def test_the_markdown_report_carries_it_too(self):
+        """The md variant is what lands in a PR comment; a reader there needs the
+        same answer as a reader of the HTML."""
+        md = R.md_control_registry(CFG, "Open", statuses=["todo"])
+        self.assertIn("NEXT STEP:", md)
+        self.assertIn("GO_LIVE_SWITCHES.md#3-admin-mfa--enforce", md)
 
 
 class DeterminismTests(RegistryTestCase):
